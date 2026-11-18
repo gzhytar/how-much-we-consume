@@ -1,5 +1,5 @@
 import type { ShellyConfig } from "./shelly";
-import type { Limits } from "./summary";
+import { DEFAULT_POLL_MINUTES, type Limits } from "./summary";
 import type { Prices } from "./tariff";
 
 function numEnv(name: string, fallback: number): { value: number; isDefault: boolean } {
@@ -22,6 +22,8 @@ export interface AppConfig {
   collectSecrets: string[];
   /** Names for L1–L3 shown on the dashboard, e.g. "Kuchyň,Obývák,Bojler". */
   phaseNames: string[];
+  /** Minutes between scheduled readings; must match the QStash schedule. */
+  pollMinutes: number;
 }
 
 export function getConfig(): AppConfig {
@@ -31,6 +33,10 @@ export function getConfig(): AppConfig {
   const deviceId = process.env.SHELLY_DEVICE_ID?.trim();
   const authKey = process.env.SHELLY_AUTH_KEY?.trim();
   const code = process.env.EGD_HDO_CODE?.trim();
+  const poll = numEnv("POLL_MINUTES", DEFAULT_POLL_MINUTES).value;
+  if (!Number.isInteger(poll) || poll < 1 || poll > 30) {
+    throw new Error(`POLL_MINUTES musí být celé číslo 1–30, je "${poll}"`);
+  }
   return {
     demo: process.env.DEMO === "1",
     prices: { vt: vt.value, nt: nt.value },
@@ -57,6 +63,7 @@ export function getConfig(): AppConfig {
       .split(",")
       .map((s) => s.trim())
       .slice(0, 3),
+    pollMinutes: poll,
     collectSecrets: [process.env.COLLECT_SECRET, process.env.CRON_SECRET]
       .map((s) => s?.trim())
       .filter((s): s is string => !!s),

@@ -2,7 +2,7 @@
 
 A TV dashboard whose job is to make the family **notice a rising cost and act right away**.
 
-- **Right now** (the headline): what electricity costs at this moment in **Kč per hour**, averaged over 5 minutes so a kettle doesn't set it off. It's compared with the hourly limit and with what's usual at this time. Next to it, "Co teď běží" shows live power on each of the meter's three phases, which helps find what's running (name them with `PHASE_NAMES`).
+- **Right now** (the headline): what electricity costs at this moment in **Kč per hour**, averaged over one reading interval (`POLL_MINUTES`, default 3 minutes) so a kettle doesn't set it off. It's compared with the hourly limit and with what's usual at this time. Next to it, "Co teď běží" shows live power on each of the meter's three phases, which helps find what's running (name them with `PHASE_NAMES`).
 - **Past hour** and **past 24 hours** in Kč, each against its limit and the usual level.
 - **24 h trend** in the "Posledních 24 hodin" tile: one small bar per hour, the current hour in blue, hours over the hourly limit in red. It shows the shape of the day; the numbers stay in the tiles.
 - **Kdy je elektřina levná:** the next 12 hours as expensive (VT) and cheap (NT) stretches with prices and times, plus one sentence on when to run the washing machine or dishwasher.
@@ -44,6 +44,7 @@ Google TV (Fully Kiosk) ─► /?t=TOKEN ─► /api/summary (every 60 s)
    - Create the schedule once from your computer:
      `QSTASH_TOKEN=<token> npm run schedule -- https://<your-app>.vercel.app`
      Rerunning the command updates the same schedule. You can also create it in the console with the same settings: destination `https://<your-app>.vercel.app/api/collect`, method POST, cron `*/3 * * * *`, retries 0.
+   - Other interval: prefix the command with `POLL_MINUTES=<n>` (1–30) and set the same `POLL_MINUTES` in Vercel. "Právě teď" is averaged over that window, and data counts as out of date after `max(5, n + 2)` minutes.
    - The app accepts only signatures made for its production URL (`VERCEL_PROJECT_PRODUCTION_URL`). If the schedule uses another domain, set `QSTASH_COLLECT_URL` to the exact destination URL.
    - Check the deliveries under *QStash → Logs*. A 401 means a signing-key or URL mismatch, and it's logged in Vercel as `QStash signature rejected (…)`. Keep Vercel Deployment Protection off for production, or QStash can't reach the app.
    - Alternatives: a free <https://cron-job.org> job calling `/api/collect?key=<COLLECT_SECRET>`, or on Vercel Pro a Vercel Cron with `CRON_SECRET`.

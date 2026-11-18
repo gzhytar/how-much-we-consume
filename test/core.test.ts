@@ -312,6 +312,29 @@ describe("live rate and chart levels", () => {
       i >= all.length - 5 ? { ...x, phases: [extra, w, 0] } : { ...x, phases: [0, w, 0] },
     );
 
+  it("averages over the configured reading interval", () => {
+    // 1 kW all day, then 4 kW extra for the last 5 minutes: a 10-minute window sees half of it.
+    const samples: Sample[] = [];
+    let wh = 0;
+    for (let t = now - DAY; t <= now; t += MINUTE) {
+      const w = t >= now - 5 * MINUTE ? 5000 : 1000;
+      samples.push({ ts: t, wh, w });
+      wh += (w * MINUTE) / HOUR;
+    }
+    const input = { samples, schedule: parseFallback(""), scheduleSource: "t", prices, limits: { hourCzk: 20, dayCzk: 1000 }, now };
+    expect(buildSummary(input).live?.windowMinutes).toBe(3);
+    expect(buildSummary(input).live?.kw).toBeCloseTo(5, 6);
+    const ten = buildSummary({ ...input, pollMinutes: 10 }).live;
+    expect(ten?.windowMinutes).toBe(10);
+    expect(ten?.kw).toBeCloseTo(3, 6);
+  });
+
+  it("treats data as stale after max(5, poll + 2) minutes", () => {
+    const input = { samples: constant(now - DAY, now - 8 * MINUTE, 500), schedule: parseFallback(""), scheduleSource: "t", prices, limits: { hourCzk: 20, dayCzk: 200 }, now };
+    expect(buildSummary(input).stale).toBe(true);
+    expect(buildSummary({ ...input, pollMinutes: 10 }).stale).toBe(false);
+  });
+
   it("averages the last 5 minutes into Kč/h and flags it against the hourly limit", () => {
     // 1 kW all day, then 4 kW extra for the last 5 minutes.
     const samples: Sample[] = [];
@@ -334,12 +357,13 @@ describe("live rate and chart levels", () => {
     expect(s.live?.czkPerHour).toBeCloseTo(30, 6);
     expect(s.live?.level).toBe("alert");
     expect(s.level).toBe("alert");
+    // Each phase is priced at the current tariff (VT 6 Kč/kWh here).
     expect(s.live?.phases).toEqual([
-      { name: "Kuchyň", w: 4000 },
-      { name: "L2", w: 1000 },
-      { name: "Bojler", w: 0 },
+      { name: "Kuchyň", w: 4000, czkPerHour: 24 },
+      { name: "L2", w: 1000, czkPerHour: 6 },
+      { name: "Bojler", w: 0, czkPerHour: 0 },
     ]);
-    expect(s.tips[0]).toMatch(/Právě teď.*Nejvíc odebírá Kuchyň/);
+    expect(s.tips[0]).toMatch(/Právě teď.*Nejvíc stojí Kuchyň \(24 Kč za hodinu\)/);
     expect(s.timeline.stretches[0].from).toBe(now);
   });
 

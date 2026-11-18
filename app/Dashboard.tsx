@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Bar, LiveSummary, PeriodSummary, Summary } from "@/lib/summary";
+import type { Bar, LiveSummary, PeriodSummary, PhasePower, Summary } from "@/lib/summary";
 import type { Prices, TariffStretch } from "@/lib/tariff";
 import type { Level } from "@/lib/thresholds";
 
@@ -178,7 +178,6 @@ function VsUsual({ pct, level }: { pct: number | null; level: Level | null }) {
 
 function LiveTile({ live, limit }: { live: LiveSummary | null; limit: number }) {
   const level = live?.level ?? "ok";
-  const maxPhase = live?.phases ? Math.max(1000, ...live.phases.map((p) => p.w)) : 1;
   return (
     <div className={`tile live level-${level}`}>
       <div className="tile-head">
@@ -192,7 +191,7 @@ function LiveTile({ live, limit }: { live: LiveSummary | null; limit: number }) 
             <span className="unit"> Kč/h</span>
           </div>
           <p className="sub">
-            {live ? `${kw(live.kw * 1000)} kW · průměr za 5 min` : "bez aktuálních dat"}
+            {live ? `${kw(live.kw * 1000)} kW · průměr za ${live.windowMinutes} min` : "bez aktuálních dat"}
           </p>
           {live && <Meter value={live.czkPerHour} limit={limit} level={live.limitLevel} />}
           <p className="sub row">
@@ -201,23 +200,48 @@ function LiveTile({ live, limit }: { live: LiveSummary | null; limit: number }) 
             {live && <VsUsual pct={live.vsUsualPct} level={live.usualLevel} />}
           </p>
         </div>
-        {live?.phases && (
-          <div className="phases" aria-label="Odběr po fázích">
-            <h3>Co teď běží</h3>
-            {live.phases.map((p) => (
-              <div className="phase" key={p.name}>
-                <span className="phase-name">{p.name}</span>
-                <span className="phase-track">
-                  <span className="phase-fill" style={{ width: `${Math.min(100, (p.w / maxPhase) * 100)}%` }} />
-                </span>
-                <span className="phase-value">{kw(p.w)} kW</span>
-              </div>
-            ))}
-          </div>
-        )}
+        {live?.phases && <PhaseCosts phases={live.phases} limit={limit} />}
       </div>
     </div>
   );
+}
+
+/**
+ * "Co teď běží": what each circuit costs per hour right now. Bars share the hourly limit's scale,
+ * so a bar's length means the same as the main meter; the costliest circuit is highlighted.
+ */
+function PhaseCosts({ phases, limit }: { phases: PhasePower[]; limit: number }) {
+  const scale = Math.max(limit, ...phases.map((p) => p.czkPerHour), 1);
+  const top = phases.reduce((a, b) => (b.czkPerHour > a.czkPerHour ? b : a), phases[0]);
+  const label = phases.map((p) => `${p.name} ${phaseCzk(p.czkPerHour)} Kč za hodinu`).join(", ");
+  return (
+    <div className="phases" role="group" aria-label={`Co teď běží: ${label}`}>
+      <div className="phases-head">
+        <h3>Co teď běží</h3>
+        <span className="phases-unit">Kč za hodinu</span>
+      </div>
+      {phases.map((p) => {
+        const isTop = p === top && p.czkPerHour >= 1;
+        return (
+          <div className={`phase${isTop ? " is-top" : ""}`} key={p.name}>
+            <span className="phase-name">{p.name}</span>
+            <span className="phase-track">
+              <span className="phase-fill" style={{ width: `${Math.min(100, (p.czkPerHour / scale) * 100)}%` }} />
+            </span>
+            <span className="phase-value">
+              {phaseCzk(p.czkPerHour)}
+              <span className="phase-kw">{kw(p.w)} kW</span>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Whole crowns rounded up, like every cost on the screen; under 1 Kč reads "<1" rather than "1". */
+function phaseCzk(v: number): string {
+  return v > 0 && v < 1 ? "<1" : czk(v);
 }
 
 function PeriodTile({

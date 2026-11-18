@@ -10,9 +10,12 @@ import {
 } from "./thresholds";
 import { DAY, HOUR, MINUTE, floorHour } from "./time";
 
-export const STALE_AFTER = 5 * MINUTE;
-/** "Right now" is the average over this window, so a kettle doesn't spike the headline. */
-export const LIVE_WINDOW = 5 * MINUTE;
+/** Default reading interval (POLL_MINUTES): the QStash schedule's period. */
+export const DEFAULT_POLL_MINUTES = 3;
+/** Data counts as out of date when the newest reading is older than this (at least 5 min). */
+export function staleAfter(pollMinutes: number): number {
+  return Math.max(5, pollMinutes + 2) * MINUTE;
+}
 /** How far ahead the "Kdy je elektřina levná" timeline looks. */
 export const TIMELINE_HOURS = 12;
 /** The "usual usage" comparison is only switched on after this much history. */
@@ -51,10 +54,14 @@ export interface Bar {
 export interface PhasePower {
   name: string;
   w: number;
+  /** What this phase costs per hour at its live power and the current tariff price. */
+  czkPerHour: number;
 }
 
-/** Cost rate right now, averaged over LIVE_WINDOW and compared with the hourly limit. */
+/** Cost rate right now, averaged over one reading interval and compared with the hourly limit. */
 export interface LiveSummary {
+  /** Length of the averaging window in minutes (= POLL_MINUTES). */
+  windowMinutes: number;
   kw: number;
   czkPerHour: number;
   limitCzkPerHour: number;
@@ -105,6 +112,11 @@ export interface SummaryInput {
   now: number;
   warnings?: string[];
   phaseNames?: string[];
+  /**
+   * Minutes between scheduled readings (POLL_MINUTES). "Right now" is the average over this window:
+   * it always spans at least one reading, and a kettle doesn't spike the headline.
+   */
+  pollMinutes?: number;
 }
 
 export function buildSummary(input: SummaryInput): Summary {
@@ -156,20 +168,24 @@ export function buildSummary(input: SummaryInput): Summary {
     });
   }
   const current = tariffAt(schedule, now);
+  const priceNow = current === "NT" ? prices.nt : prices.vt;
   const change = nextChange(schedule, now);
   const stretches = tariffStretches(schedule, now, now + TIMELINE_HOURS * HOUR);
-  const stale = !latest || now - latest.ts > STALE_AFTER;
+  const pollMinutes = input.pollMinutes ?? DEFAULT_POLL_MINUTES;
+  const stale = !latest || now - latest.ts > staleAfter(pollMinutes);
 
   let live: LiveSummary | null = null;
   if (latest && !stale) {
-    const r = sumRange(ledger, end - LIVE_WINDOW, end);
-    const perHour = HOUR / LIVE_WINDOW;
+    const liveWindow = pollMinutes * MINUTE;
+    const r = sumRange(ledger, end - liveWindow, end);
+    const perHour = HOUR / liveWindow;
     const czkPerHour = r.czk * perHour;
     const limitLevel = levelFromLimit(czkPerHour, limits.hourCzk);
     const usualCzkPerHour = hour.usual ? hour.usual.median : null;
     const usualLevel = usualCzkPerHour !== null ? levelFromBaseline(czkPerHour, usualCzkPerHour, 3) : null;
     const names = input.phaseNames ?? [];
     live = {
+      windowMinutes: pollMinutes,
       kw: r.kwh * perHour,
       czkPerHour,
       limitCzkPerHour: limits.hourCzk,
@@ -180,7 +196,11 @@ export function buildSummary(input: SummaryInput): Summary {
       level: worst(limitLevel, usualLevel),
       phases:
         latest.phases?.length === 3
-          ? latest.phases.map((w, i) => ({ name: names[i] || `L${i + 1}`, w: Math.max(0, w) }))
+          ? latest.phases.map((w, i) => ({
+              name: names[i] || `L${i + 1}`,
+              w: Math.max(0, w),
+              czkPerHour: (Math.max(0, w) / 1000) * priceNow,
+            }))
           : null,
     };
   }
@@ -190,7 +210,7 @@ export function buildSummary(input: SummaryInput): Summary {
     const top = live.phases ? [...live.phases].sort((a, b) => b.w - a.w)[0] : null;
     tips.push(
       `Právě teď to stojí ${fmtCzk(live.czkPerHour)} za hodinu – nad limitem ${fmtCzk(live.limitCzkPerHour)} za hodinu.` +
-        (top && top.w > 300 ? ` Nejvíc odebírá ${top.name} (${fmtKw(top.w)}).` : "") +
+        (top && top.w > 300 ? ` Nejvíc stojí ${top.name} (${fmtCzk(top.czkPerHour)} za hodinu).` : "") +
         " Co můžete vypnout?",
     );
   } else if (live && live.usualLevel && live.usualLevel !== "ok" && live.vsUsualPct !== null) {
@@ -217,7 +237,7 @@ export function buildSummary(input: SummaryInput): Summary {
       current,
       nextChangeAt: change ? change.at : null,
       nextTariff: change ? change.to : null,
-      priceNow: current === "NT" ? prices.nt : prices.vt,
+      priceNow,
       prices,
       source: input.scheduleSource,
     },

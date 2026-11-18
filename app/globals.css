@@ -315,17 +315,30 @@ p {
   color: var(--ink-2);
 }
 
-/* Per-phase power: one hue, aligned rows, value at the end. */
+/* Per-circuit cost: a meter list on the hourly limit's scale. The costliest circuit is the one
+   accent bar; the rest are de-emphasized grey, so "what to switch off" reads at a glance. */
 .phases {
   display: flex;
   flex-direction: column;
-  gap: 0.7vw;
+  gap: 0.9vw;
   padding-top: 0.4vw;
 }
 
+.phases-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1vw;
+}
+
 .phases h3 {
-  font-size: 1.15vw;
+  font-size: 1.3vw;
   font-weight: 500;
+  color: var(--ink-2);
+}
+
+.phases-unit {
+  font-size: 1.05vw;
   color: var(--muted);
 }
 
@@ -333,8 +346,8 @@ p {
   display: grid;
   grid-template-columns: minmax(4vw, auto) 1fr auto;
   align-items: center;
-  gap: 0.8vw;
-  font-size: 1.25vw;
+  gap: 0.9vw;
+  font-size: 1.35vw;
 }
 
 .phase-name {
@@ -343,9 +356,9 @@ p {
 }
 
 .phase-track {
-  height: 0.9vw;
+  height: 1vw;
   border-radius: 999px;
-  background: rgba(57, 135, 229, 0.18);
+  background: var(--grid);
   overflow: hidden;
 }
 
@@ -353,15 +366,36 @@ p {
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--bar);
   transition: width 1s ease;
 }
 
-.phase-value {
+.phase.is-top .phase-name {
+  color: var(--ink);
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
+}
+
+.phase.is-top .phase-fill {
+  background: var(--accent);
+}
+
+.phase-value {
+  font-size: 2.2vw;
+  font-weight: 700;
+  line-height: 1;
   text-align: right;
-  min-width: 5vw;
+  min-width: 5.5vw;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25vw;
+}
+
+.phase-kw {
+  font-size: 1vw;
+  font-weight: 400;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------- banner ---------- */

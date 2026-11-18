@@ -41,6 +41,7 @@ export async function GET(req: Request) {
     now,
     warnings,
     phaseNames: cfg.phaseNames,
+    pollMinutes: cfg.pollMinutes,
   });
   return NextResponse.json(summary, { headers: { "Cache-Control": "no-store" } });
 }
