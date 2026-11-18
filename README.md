@@ -28,7 +28,7 @@ Google TV (Fully Kiosk) ─► /?t=TOKEN ─► /api/summary (every 60 s)
    - Under *User settings → Authorization cloud key*, copy the **key** and the **server** (e.g. `shelly-123-eu.shelly.cloud`).
    - The device ID is under *Device → Settings → Device information*. It's also the last part of the local hostname `shellypro3em63-<id>.local`.
 2. **Vercel**
-   - Import this repo as a new project.
+   - Import this repo as a new project. `vercel.json` pins the functions to Frankfurt (`fra1`), next to Shelly's EU cloud; create the Upstash databases in an EU region too.
    - Under *Storage*, add **Upstash for Redis** from the Marketplace (free plan). This sets `KV_REST_API_URL` / `KV_REST_API_TOKEN`.
    - Add the other variables from `.env.example`. `DASHBOARD_TOKEN` and `COLLECT_SECRET` are mandatory in production; generate them with `openssl rand -hex 24`.
 3. **Readings every 3 minutes (Upstash QStash)**
