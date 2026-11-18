@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { Bar, LiveSummary, PeriodSummary, Summary, UpcomingHour } from "@/lib/summary";
+import { useEffect, useState } from "react";
+import type { Bar, LiveSummary, PeriodSummary, Summary } from "@/lib/summary";
+import type { Prices, TariffStretch } from "@/lib/tariff";
 import type { Level } from "@/lib/thresholds";
 
 const POLL_MS = 60_000;
 const TZ = "Europe/Prague";
+const HOUR = 3_600_000;
 
-const czk = (v: number) =>
-  v.toLocaleString("cs-CZ", {
-    minimumFractionDigits: v < 100 ? 1 : 0,
-    maximumFractionDigits: v < 100 ? 1 : 0,
-  });
+/** Costs in whole crowns, rounded up (8,1 → 9). Tariff prices per kWh keep their decimals. */
+const czk = (v: number) => Math.max(0, Math.ceil(v - 1e-9)).toLocaleString("cs-CZ");
 const price = (v: number) => v.toLocaleString("cs-CZ", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const kw = (w: number) => (w / 1000).toLocaleString("cs-CZ", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const kwh = (v: number) => v.toLocaleString("cs-CZ", { maximumFractionDigits: v < 10 ? 2 : 1 });
@@ -93,13 +92,8 @@ export default function Dashboard({ token }: { token: string }) {
         <h1>Kolik nás stojí elektřina</h1>
         <div className="top-right">
           <span className={`tariff tariff-${t.current}`}>
-            {t.current === "NT" ? "Levný tarif NT" : "Drahý tarif VT"} · {price(t.priceNow)} Kč/kWh
+            {t.current === "NT" ? "Levný tarif NT" : "Tarif VT"} · {price(t.priceNow)} Kč/kWh
           </span>
-          {t.nextChangeAt && (
-            <span className="next">
-              {t.nextTariff === "NT" ? "NT od" : "VT od"} {time(t.nextChangeAt)}
-            </span>
-          )}
           <span className="clock">{time(clock)}</span>
         </div>
       </header>
@@ -108,7 +102,9 @@ export default function Dashboard({ token }: { token: string }) {
         <LiveTile live={data.live} limit={data.hour.limitCzk} tariffLabel={`${t.current} ${price(t.priceNow)} Kč/kWh`} />
         <div className="side">
           <PeriodTile title="Poslední hodina" p={data.hour} stale={stale} />
-          <PeriodTile title="Posledních 24 hodin" p={data.day} stale={stale} />
+          <PeriodTile title="Posledních 24 hodin" p={data.day} stale={stale}>
+            <Trend bars={data.bars} />
+          </PeriodTile>
         </div>
       </section>
 
@@ -118,10 +114,7 @@ export default function Dashboard({ token }: { token: string }) {
         </section>
       )}
 
-      <section className="chart-wrap">
-        <ChartHead bars={data.bars} limit={data.hour.limitCzk} />
-        <HourChart bars={data.bars} upcoming={data.upcoming} limit={data.hour.limitCzk} />
-      </section>
+      <TariffTimeline stretches={data.timeline.stretches} hint={data.timeline.hint} prices={t.prices} />
 
       <footer className="foot">
         {data.lastSampleAt && <span>Poslední měření {time(data.lastSampleAt)}</span>}
@@ -224,7 +217,17 @@ function LiveTile({ live, limit, tariffLabel }: { live: LiveSummary | null; limi
   );
 }
 
-function PeriodTile({ title, p, stale }: { title: string; p: PeriodSummary; stale: boolean }) {
+function PeriodTile({
+  title,
+  p,
+  stale,
+  children,
+}: {
+  title: string;
+  p: PeriodSummary;
+  stale: boolean;
+  children?: React.ReactNode;
+}) {
   // With out-of-date data a green "V pořádku" would be a false all-clear, so show no status.
   return (
     <div className={`tile period${stale ? "" : ` level-${p.level}`}`}>
@@ -244,186 +247,96 @@ function PeriodTile({ title, p, stale }: { title: string; p: PeriodSummary; stal
         <span>limit {czk(p.limitCzk)} Kč</span>
         <VsUsual pct={p.vsUsualPct} level={p.usualLevel} />
       </p>
+      {children}
     </div>
   );
 }
 
-function ChartHead({ bars, limit }: { bars: Bar[]; limit: number }) {
-  const has = (l: Level) => bars.some((b) => b.level === l);
+/** 24 tiny bars, one per hour: the shape of the day, no axis. Red = hour over the hourly limit. */
+function Trend({ bars }: { bars: Bar[] }) {
+  if (bars.length === 0) return null;
+  const W = 480;
+  const H = 56;
+  const slot = W / bars.length;
+  const bw = slot * 0.62;
+  const max = Math.max(...bars.map((b) => b.czk), 0.01);
+  const anyRed = bars.some((b) => b.level === "alert");
+  const peak = bars.reduce((a, b) => (b.czk > a.czk ? b : a), bars[0]);
   return (
-    <div className="chart-head">
-      <h2>Cena po hodinách – posledních 24 h a příští hodiny</h2>
-      <div className="legend">
-        <span className="lg lg-bar" /> Kč za hodinu
-        <span className="lg lg-now" /> tato hodina
-        {bars.some((b) => b.usualCzk !== null) && (
-          <>
-            <span className="lg lg-usual" /> obvykle
-          </>
-        )}
-        {has("warn") && (
-          <>
-            <span className="lg lg-warn" /> nad obvyklou spotřebou
-          </>
-        )}
-        {has("alert") && (
-          <>
-            <span className="lg lg-alert" /> nad limitem {czk(limit)} Kč
-          </>
-        )}
+    <div className="trend">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        role="img"
+        aria-label={`Cena po hodinách za 24 h, nejdražší hodina ${hourLabel(peak.start)}:00 za ${czk(peak.czk)} Kč`}
+      >
+        {bars.map((b, i) => {
+          const h = Math.max(2, (b.czk / max) * H);
+          const cls = b.level === "alert" ? "tr-alert" : i === bars.length - 1 ? "tr-now" : "tr-bar";
+          return <rect key={b.start} x={i * slot + (slot - bw) / 2} y={H - h} width={bw} height={h} rx={2} className={cls} />;
+        })}
+      </svg>
+      <div className="trend-axis">
+        <span>{hourLabel(bars[0].start)}:00</span>
+        {anyRed && <span className="trend-note">červeně: hodiny nad limitem</span>}
+        <span>teď</span>
       </div>
     </div>
   );
 }
 
-function HourChart({ bars, upcoming, limit }: { bars: Bar[]; upcoming: UpcomingHour[]; limit: number }) {
-  // Match the drawing's aspect ratio to the box it sits in, so it fills the space without stretching text.
-  const box = useRef<HTMLDivElement>(null);
-  const [aspect, setAspect] = useState(300 / 1600);
-  useEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    const measure = () => el.clientWidth > 0 && el.clientHeight > 0 && setAspect(el.clientHeight / el.clientWidth);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+/** "When is electricity cheap": the next 12 hours as VT/NT blocks, labelled with price and times. */
+function TariffTimeline({ stretches, hint, prices }: { stretches: TariffStretch[]; hint: string; prices: Prices }) {
+  if (stretches.length === 0) return null;
+  const from = stretches[0].from;
+  const to = stretches[stretches.length - 1].to;
+  const span = Math.max(1, to - from);
+  const pct = (ms: number) => ((ms - from) / span) * 100;
 
-  const W = 1600;
-  const H = Math.max(220, Math.round(W * aspect));
-  const pad = { l: 64, r: 16, t: 44, b: 40 };
-  const iw = W - pad.l - pad.r;
-  const ih = H - pad.t - pad.b;
-  const slots = bars.length + upcoming.length;
-  const slot = iw / slots;
-  const bw = Math.min(slot * 0.5, 40);
-  const nowIndex = bars.length - 1;
-
-  // Scale to the data; include the limit only when it's close enough not to squash the bars.
-  const dataMax = Math.max(1, ...bars.map((b) => b.czk), ...bars.map((b) => b.usualCzk ?? 0)) * 1.12;
-  const showLimit = limit > 0 && limit <= dataMax * 1.3;
-  const max = showLimit ? Math.max(dataMax, limit * 1.08) : dataMax;
-  const y = (v: number) => pad.t + ih - (v / max) * ih;
-  const base = pad.t + ih;
-  const xSlot = (i: number) => pad.l + i * slot;
-  const ticks = niceTicks(max);
-
-  const nt = [...bars.map((b) => b.ntShare), ...upcoming.map((u) => u.ntShare)];
-  const ntRuns: { from: number; to: number }[] = [];
-  nt.forEach((s, i) => {
-    if (s <= 0) return;
-    const last = ntRuns[ntRuns.length - 1];
-    if (last && last.to === i) last.to = i + 1;
-    else ntRuns.push({ from: i, to: i + 1 });
-  });
-
-  const past = bars.slice(0, -1);
-  const peak = past.reduce<Bar | null>((a, b) => (!a || b.czk > a.czk ? b : a), null);
-  const allStarts = [...bars.map((b) => b.start), ...upcoming.map((u) => u.start)];
+  // Time labels: "teď", every boundary, and the end; skip one that would crowd the previous label.
+  const marks: { at: number; label: string }[] = [{ at: from, label: "teď" }];
+  for (const s of stretches.slice(1)) marks.push({ at: s.from, label: time(s.from) });
+  marks.push({ at: to, label: time(to) });
+  const shown: typeof marks = [];
+  for (const m of marks) {
+    const last = shown[shown.length - 1];
+    if (!last || pct(m.at) - pct(last.at) >= 7) shown.push(m);
+    else if (m.at === to) shown[shown.length - 1] = m;
+  }
 
   return (
-    <div className="chart-box" ref={box}>
-      <svg
-        className="chart"
-        viewBox={`0 0 ${W} ${H}`}
-        role="img"
-        aria-label="Cena elektřiny po hodinách za posledních 24 hodin a tarif v příštích hodinách"
-      >
-        {nt.map((s, i) =>
-          s > 0 ? <rect key={`nt${i}`} x={xSlot(i)} y={pad.t} width={slot} height={ih} className="nt-band" opacity={s} /> : null,
-        )}
-        {ntRuns.map((r) => (
-          <text key={`ntl${r.from}`} x={xSlot(r.from) + ((r.to - r.from) * slot) / 2} y={pad.t + 26} className="nt-label" textAnchor="middle">
-            NT
-          </text>
-        ))}
-
-        {ticks.map((v) => (
-          <g key={v}>
-            <line x1={pad.l} x2={W - pad.r} y1={y(v)} y2={y(v)} className="grid" />
-            <text x={pad.l - 10} y={y(v) + 7} className="axis" textAnchor="end">
-              {v}
-            </text>
-          </g>
-        ))}
-        <line x1={pad.l} x2={W - pad.r} y1={base} y2={base} className="baseline" />
-
-        {bars.map((b, i) => {
-          const cx = xSlot(i) + slot / 2;
-          const h = Math.max(0, base - y(b.czk));
-          const isNow = i === nowIndex;
-          const cls = b.level !== "ok" ? `bar bar-${b.level}` : isNow ? "bar bar-now" : "bar";
+    <section className="timeline" aria-label="Kdy je elektřina levná">
+      <div className="timeline-head">
+        <h2>Kdy je elektřina levná</h2>
+        <span className="sub">příštích {Math.round(span / HOUR)} hodin</span>
+      </div>
+      <div className="tl-strip">
+        {stretches.map((s) => {
+          const w = pct(s.to) - pct(s.from);
+          const nt = s.tariff === "NT";
+          const p = price(nt ? prices.nt : prices.vt);
+          const label =
+            w >= 18 ? `${nt ? "levné" : "drahé"} · ${s.tariff} ${p} Kč/kWh` : w >= 5 ? s.tariff : "";
           return (
-            <g key={b.start}>
-              <title>{`${hourLabel(b.start)}:00 – ${czk(b.czk)} Kč, ${kwh(b.kwh)} kWh${b.usualCzk !== null ? `, obvykle ${czk(b.usualCzk)} Kč` : ""}`}</title>
-              {b.usualCzk !== null && b.usualCzk > 0 && (
-                <path d={roundedTop(xSlot(i) + 2, y(b.usualCzk), slot - 4, base - y(b.usualCzk), 4)} className="ghost" />
-              )}
-              {h > 0 && <path d={roundedTop(cx - bw / 2, base - h, bw, h, Math.min(4, h / 2, bw / 2))} className={cls} />}
-            </g>
+            <div key={s.from} className={`tl-block tl-${s.tariff}`} style={{ width: `${w}%` }} title={`${s.tariff} ${time(s.from)}–${time(s.to)}`}>
+              {label && <span className="tl-label">{label}</span>}
+            </div>
           );
         })}
-
-        {/* Divider between what happened and what's coming. */}
-        <line x1={xSlot(bars.length)} x2={xSlot(bars.length)} y1={pad.t - 30} y2={base} className="divider" />
-        <text x={xSlot(bars.length) + 10} y={pad.t - 14} className="axis">
-          příští hodiny →
-        </text>
-
-        {showLimit ? (
-          <line x1={pad.l} x2={xSlot(bars.length)} y1={y(limit)} y2={y(limit)} className="limit" />
-        ) : (
-          limit > 0 && (
-            <text x={pad.l + 10} y={pad.t - 14} className="axis">
-              limit {czk(limit)} Kč/h ↑ (nad grafem)
-            </text>
-          )
-        )}
-
-        {peak && peak.czk > 0 && (
-          <text
-            x={xSlot(bars.indexOf(peak)) + slot / 2}
-            y={Math.min(y(peak.czk), peak.usualCzk ? y(peak.usualCzk) : Infinity) - 10}
-            className="peak"
-            textAnchor="middle"
+      </div>
+      <div className="tl-times">
+        {shown.map((m, i) => (
+          <span
+            key={m.at}
+            className={i === 0 ? "tl-time tl-now" : "tl-time"}
+            style={{ left: `${pct(m.at)}%` }}
+            data-edge={i === 0 ? "start" : m.at === to ? "end" : undefined}
           >
-            {czk(peak.czk)}
-          </text>
-        )}
-
-        {allStarts.map((start, i) => {
-          if (i === nowIndex) {
-            return (
-              <text key={`x${i}`} x={xSlot(i) + slot / 2} y={H - 10} className="axis-now" textAnchor="middle">
-                teď
-              </text>
-            );
-          }
-          if (i % 3 !== 0 || Math.abs(i - nowIndex) < 2) return null;
-          return (
-            <text key={`x${i}`} x={xSlot(i) + slot / 2} y={H - 10} className="axis" textAnchor="middle">
-              {hourLabel(start)}
-            </text>
-          );
-        })}
-        <text x={pad.l - 10} y={pad.t - 14} className="axis" textAnchor="end">
-          Kč
-        </text>
-      </svg>
-    </div>
+            {m.label}
+          </span>
+        ))}
+      </div>
+      <p className="tl-hint">{hint}</p>
+    </section>
   );
-}
-
-function roundedTop(x: number, y: number, w: number, h: number, r: number) {
-  return `M${x},${y + h} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + h} Z`;
-}
-
-function niceTicks(max: number): number[] {
-  const raw = max / 4;
-  const mag = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? raw;
-  const out: number[] = [];
-  for (let v = step; v <= max; v += step) out.push(Math.round(v * 100) / 100);
-  return out;
 }

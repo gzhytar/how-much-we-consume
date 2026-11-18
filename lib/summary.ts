@@ -1,5 +1,5 @@
 import { buildLedger, sumRange, type Sample } from "./energy";
-import { nextChange, tariffAt, type Prices, type Tariff, type WeeklySchedule } from "./tariff";
+import { nextChange, tariffAt, tariffStretches, type Prices, type Tariff, type TariffStretch, type WeeklySchedule } from "./tariff";
 import {
   baselineFor,
   levelFromBaseline,
@@ -13,8 +13,8 @@ import { DAY, HOUR, MINUTE, floorHour } from "./time";
 export const STALE_AFTER = 5 * MINUTE;
 /** "Right now" is the average over this window, so a kettle doesn't spike the headline. */
 export const LIVE_WINDOW = 5 * MINUTE;
-/** How many hours ahead the chart shows the VT/NT schedule. */
-export const UPCOMING_HOURS = 8;
+/** How far ahead the "Kdy je elektřina levná" timeline looks. */
+export const TIMELINE_HOURS = 12;
 /** The "usual usage" comparison is only switched on after this much history. */
 export const MIN_HISTORY_DAYS = 7;
 
@@ -47,10 +47,6 @@ export interface Bar {
   level: Level;
 }
 
-export interface UpcomingHour {
-  start: number;
-  ntShare: number;
-}
 
 export interface PhasePower {
   name: string;
@@ -88,7 +84,8 @@ export interface Summary {
   hour: PeriodSummary;
   day: PeriodSummary;
   bars: Bar[];
-  upcoming: UpcomingHour[];
+  /** VT/NT stretches from now to TIMELINE_HOURS ahead, and one sentence on when to run big appliances. */
+  timeline: { stretches: TariffStretch[]; hint: string };
   historyDays: number;
   level: Level;
   tips: string[];
@@ -154,14 +151,9 @@ export function buildSummary(input: SummaryInput): Summary {
       level: overLimit ? "alert" : overUsual && i > 0 ? "warn" : "ok",
     });
   }
-  const upcoming: UpcomingHour[] = [];
-  for (let i = 1; i <= UPCOMING_HOURS; i++) {
-    const start = currentHour + i * HOUR;
-    upcoming.push({ start, ntShare: ntShare(start) });
-  }
-
   const current = tariffAt(schedule, now);
   const change = nextChange(schedule, now);
+  const stretches = tariffStretches(schedule, now, now + TIMELINE_HOURS * HOUR);
   const stale = !latest || now - latest.ts > STALE_AFTER;
 
   let live: LiveSummary | null = null;
@@ -193,7 +185,7 @@ export function buildSummary(input: SummaryInput): Summary {
   if (live && live.limitLevel === "alert") {
     const top = live.phases ? [...live.phases].sort((a, b) => b.w - a.w)[0] : null;
     tips.push(
-      `Právě teď to stojí ${fmtCzk(live.czkPerHour)} za hodinu – nad limitem ${fmtCzk(live.limitCzkPerHour)}.` +
+      `Právě teď to stojí ${fmtCzk(live.czkPerHour)} za hodinu – nad limitem ${fmtCzk(live.limitCzkPerHour)} za hodinu.` +
         (top && top.w > 300 ? ` Nejvíc odebírá ${top.name} (${fmtKw(top.w)}).` : "") +
         " Co můžete vypnout?",
     );
@@ -209,9 +201,6 @@ export function buildSummary(input: SummaryInput): Summary {
     tips.push(`Za posledních 24 h ${fmtCzk(day.czk)} – nad denním limitem ${fmtCzk(day.limitCzk)}.`);
   } else if (day.usualLevel === "alert" && day.vsUsualPct !== null) {
     tips.push(`Za 24 h o ${Math.round(day.vsUsualPct)} % víc než obvyklý den.`);
-  }
-  if (current === "VT" && change && change.at - now <= 3 * HOUR && prices.vt > prices.nt) {
-    tips.push(`Levnější tarif začne v ${fmtTime(change.at)}. Pračku, myčku nebo sušičku můžete odložit.`);
   }
 
   return {
@@ -231,7 +220,7 @@ export function buildSummary(input: SummaryInput): Summary {
     hour,
     day,
     bars,
-    upcoming,
+    timeline: { stretches, hint: timelineHint(current, change, now) },
     historyDays,
     level: worst(live?.level, hour.level, day.level),
     tips,
@@ -268,8 +257,33 @@ function period(
   };
 }
 
+/** Costs are shown in whole crowns, rounded up (8,1 → 9 Kč). */
+export function ceilCzk(v: number): number {
+  return Math.max(0, Math.ceil(v - 1e-9));
+}
+
 export function fmtCzk(v: number): string {
-  return `${v.toLocaleString("cs-CZ", { maximumFractionDigits: v < 100 ? 1 : 0, minimumFractionDigits: v < 100 ? 1 : 0 })} Kč`;
+  return `${ceilCzk(v).toLocaleString("cs-CZ")} Kč`;
+}
+
+export function fmtDuration(ms: number): string {
+  const total = Math.round(ms / MINUTE);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h === 0) return `${m} min`;
+  return m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
+function timelineHint(current: Tariff, change: { at: number; to: Tariff } | null, now: number): string {
+  const within = change && change.at - now <= TIMELINE_HOURS * HOUR;
+  if (current === "VT") {
+    return within
+      ? `Levný tarif za ${fmtDuration(change.at - now)} (od ${fmtTime(change.at)}) – pračku, myčku a sušičku spusťte až potom.`
+      : `V příštích ${TIMELINE_HOURS} hodinách levný tarif nebude.`;
+  }
+  return within
+    ? `Teď je levný tarif ještě ${fmtDuration(change.at - now)} (do ${fmtTime(change.at)}) – dobrá chvíle pro pračku a myčku.`
+    : `Levný tarif platí celých příštích ${TIMELINE_HOURS} hodin.`;
 }
 
 export function fmtKw(w: number): string {

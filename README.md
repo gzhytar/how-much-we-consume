@@ -4,7 +4,9 @@ A TV dashboard whose job is to make the family **notice a rising cost and act ri
 
 - **Right now** (the headline): what electricity costs at this moment in **Kč per hour**, averaged over 5 minutes so a kettle doesn't set it off. It's compared with the hourly limit and with what's usual at this time. Next to it, "Co teď běží" shows live power on each of the meter's three phases, which helps find what's running (name them with `PHASE_NAMES`).
 - **Past hour** and **past 24 hours** in Kč, each against its limit and the usual level.
-- **Hourly chart:** past hours in grey; amber when well above usual, red when over the hourly limit, blue for the current hour. The faint wide bar behind each hour is the usual cost. To the right of "teď" the coming hours show when the cheap tariff (NT) starts.
+- **24 h trend** in the "Posledních 24 hodin" tile: one small bar per hour, the current hour in blue, hours over the hourly limit in red. It shows the shape of the day; the numbers stay in the tiles.
+- **Kdy je elektřina levná:** the next 12 hours as expensive (VT) and cheap (NT) stretches with prices and times, plus one sentence on when to run the washing machine or dishwasher.
+- Costs are shown in whole crowns, rounded up (8,1 Kč → 9 Kč). Tariff prices per kWh keep their decimals.
 - A tile turns amber or red, and a banner says what to do. When data is out of date the numbers are dimmed and the banner says so.
 
 ```

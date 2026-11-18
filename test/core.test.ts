@@ -340,7 +340,7 @@ describe("live rate and chart levels", () => {
       { name: "Bojler", w: 0 },
     ]);
     expect(s.tips[0]).toMatch(/Právě teď.*Nejvíc odebírá Kuchyň/);
-    expect(s.upcoming).toHaveLength(8);
+    expect(s.timeline.stretches[0].from).toBe(now);
   });
 
   it("marks bars over the hourly limit", () => {
@@ -356,8 +356,13 @@ describe("live rate and chart levels", () => {
     const full = s.bars.slice(0, 23);
     expect(full.filter((b) => b.ntShare === 0).every((b) => b.level === "alert")).toBe(true);
     expect(full.filter((b) => b.ntShare === 1).every((b) => b.level === "ok")).toBe(true);
-    // Upcoming hours 20:00–03:00 → NT from 00:00.
-    expect(s.upcoming.map((u) => u.ntShare)).toEqual([0, 0, 0, 0, 1, 1, 1, 1]);
+    // From 19:00, 12 h ahead: VT until 00:00, NT 00:00–06:00, VT until 07:00.
+    expect(s.timeline.stretches).toEqual([
+      { from: now, to: now + 5 * HOUR, tariff: "VT" },
+      { from: now + 5 * HOUR, to: now + 11 * HOUR, tariff: "NT" },
+      { from: now + 11 * HOUR, to: now + 12 * HOUR, tariff: "VT" },
+    ]);
+    expect(s.timeline.hint).toBe("Levný tarif za 5 h (od 00:00) – pračku, myčku a sušičku spusťte až potom.");
   });
 
   it("has no live value when the data is stale", () => {
@@ -370,5 +375,34 @@ describe("live rate and chart levels", () => {
       now,
     });
     expect(s.live).toBeNull();
+  });
+});
+
+describe("display helpers", () => {
+  it("rounds costs up to whole crowns", async () => {
+    const { fmtCzk, ceilCzk } = await import("@/lib/summary");
+    expect(ceilCzk(8.01)).toBe(9);
+    expect(ceilCzk(8)).toBe(8);
+    expect(ceilCzk(8.0000000001)).toBe(8); // float noise isn't a whole extra crown
+    expect(ceilCzk(0)).toBe(0);
+    expect(fmtCzk(1234.2)).toBe("1\u00a0235 Kč");
+  });
+  it("formats durations", async () => {
+    const { fmtDuration } = await import("@/lib/summary");
+    expect(fmtDuration(45 * MINUTE)).toBe("45 min");
+    expect(fmtDuration(2 * HOUR + 15 * MINUTE)).toBe("2 h 15 min");
+    expect(fmtDuration(3 * HOUR)).toBe("3 h");
+  });
+  it("hints how long cheap power lasts when it's on", () => {
+    const at = cet("2026-11-18 01:00");
+    const s = buildSummary({
+      samples: constant(at - HOUR, at, 500),
+      schedule: parseFallback("00:00-06:00"),
+      scheduleSource: "t",
+      prices,
+      limits: { hourCzk: 20, dayCzk: 200 },
+      now: at,
+    });
+    expect(s.timeline.hint).toBe("Teď je levný tarif ještě 5 h (do 06:00) – dobrá chvíle pro pračku a myčku.");
   });
 });

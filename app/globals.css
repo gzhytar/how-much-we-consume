@@ -8,9 +8,8 @@
   --grid: #2c2c2a;
   --axis: #383835;
   --accent: #3987e5; /* this hour, per-phase bars */
-  --bar: #6f6e69; /* past hours: de-emphasized, so problem hours and "now" stand out */
-  --ghost: rgba(240, 239, 236, 0.1); /* "usual" behind each bar */
-  --nt-band: rgba(240, 239, 236, 0.06);
+  --bar: #6f6e69; /* past hours in the 24 h trend: de-emphasized, so problem hours and "now" stand out */
+  --vt: #3a3936; /* VT is the normal state: neutral, not a warning */
   --good: #0ca30c;
   --warning: #fab219;
   --critical: #d03b3b;
@@ -43,9 +42,9 @@ p {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  gap: 1.1vw;
+  gap: 0.9vw;
   /* TV overscan: keep everything clear of the edges. */
-  padding: 2vw 3vw;
+  padding: 1.8vw 3vw;
   font-size: 1.15vw;
   transition: transform 2s ease;
 }
@@ -103,11 +102,7 @@ p {
 }
 
 .tariff-VT::before {
-  background: var(--warning);
-}
-
-.next {
-  color: var(--ink-2);
+  background: var(--muted);
 }
 
 .clock {
@@ -119,6 +114,8 @@ p {
 /* ---------- tiles ---------- */
 
 .tiles {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: 1.45fr 1fr;
   gap: 1.3vw;
@@ -128,17 +125,21 @@ p {
 .side {
   display: flex;
   flex-direction: column;
-  gap: 1.1vw;
+  gap: 0.9vw;
+}
+
+.side .tile {
+  flex: 1;
 }
 
 .tile {
   background: var(--surface);
   border-radius: 1vw;
-  padding: 1.2vw 1.5vw;
+  padding: 1vw 1.4vw;
   box-shadow: inset 0 0 0 1px var(--ring);
   display: flex;
   flex-direction: column;
-  gap: 0.5vw;
+  gap: 0.4vw;
 }
 
 .tile.level-warn {
@@ -171,14 +172,14 @@ p {
 
 /* The one hero figure: proportional digits read tighter at display sizes. */
 .hero {
-  font-size: 9vw;
+  font-size: 10vw;
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.02em;
 }
 
 .period-value {
-  font-size: 3.6vw;
+  font-size: 3.2vw;
   font-weight: 700;
   line-height: 1.05;
   letter-spacing: -0.01em;
@@ -366,9 +367,9 @@ p {
 /* ---------- banner ---------- */
 
 .tip {
-  font-size: 1.7vw;
+  font-size: 1.6vw;
   font-weight: 600;
-  padding: 0.9vw 1.6vw;
+  padding: 0.7vw 1.6vw;
   border-radius: 1vw;
   background: var(--surface);
   border-left: 0.5vw solid var(--accent);
@@ -382,159 +383,136 @@ p {
   border-left-color: var(--critical);
 }
 
-/* Stale data: dim the numbers so nobody acts on them; the banner says why. */
-.is-stale .tiles,
-.is-stale .chart-wrap {
+/* Stale data: dim the meter numbers so nobody acts on them; the banner says why.
+   The tariff timeline comes from the HDO schedule, not the meter, so it stays bright. */
+.is-stale .tiles {
   opacity: 0.4;
 }
 
-/* ---------- chart ---------- */
+/* ---------- "Kdy je elektřina levná" timeline ---------- */
 
-.chart-wrap {
-  flex: 1;
-  min-height: 0;
+.timeline {
   background: var(--surface);
   border-radius: 1vw;
-  padding: 1vw 1.6vw 0.5vw;
+  padding: 0.8vw 1.6vw 0.9vw;
   box-shadow: inset 0 0 0 1px var(--ring);
   display: flex;
   flex-direction: column;
-  transition: opacity 0.6s ease;
+  gap: 0.4vw;
 }
 
-.chart-head {
-  margin-bottom: 0.4vw;
+.timeline-head {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
   gap: 1vw;
 }
 
-.chart-head h2 {
-  font-size: 1.3vw;
+.timeline-head h2 {
+  font-size: 1.4vw;
   font-weight: 500;
   color: var(--ink-2);
 }
 
-.legend {
+.tl-strip {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  gap: 2px; /* surface gap between stretches */
+  height: 2.7vw;
+}
+
+.tl-block {
+  border-radius: 4px;
+  display: flex;
   align-items: center;
-  gap: 0.4vw;
-  color: var(--ink-2);
-  font-size: 1.05vw;
+  overflow: hidden;
+  min-width: 0;
 }
 
-.lg {
-  display: inline-block;
-  width: 1.1vw;
-  height: 0.8vw;
-  margin-left: 0.9vw;
-  border-radius: 2px;
+.tl-NT {
+  background: var(--good);
+  color: #fff;
 }
 
-.lg-bar {
-  background: var(--bar);
+.tl-VT {
+  background: var(--vt);
+  color: var(--ink);
 }
 
-.lg-now {
-  background: var(--accent);
+.tl-label {
+  padding: 0 0.9vw;
+  font-size: 1.3vw;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-.lg-usual {
-  background: var(--ghost);
-  box-shadow: inset 0 0 0 1px var(--ring);
-}
-
-.lg-warn {
-  background: var(--warning);
-}
-
-.lg-alert {
-  background: var(--critical);
-}
-
-.chart-box {
-  flex: 1;
-  min-height: 0;
+.tl-times {
   position: relative;
+  height: 1.8vw;
+  font-size: 1.2vw;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
 }
 
-.chart {
+.tl-time {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 
-.chart .nt-band {
-  fill: var(--nt-band);
+.tl-time[data-edge="start"] {
+  transform: none;
 }
 
-.chart .nt-label {
-  fill: var(--ink-2);
-  font-size: 22px;
+.tl-time[data-edge="end"] {
+  transform: translateX(-100%);
+}
+
+.tl-now {
+  color: var(--ink);
   font-weight: 700;
-  letter-spacing: 0.08em;
 }
 
-.chart .grid {
-  stroke: var(--grid);
-  stroke-width: 1;
+.tl-hint {
+  font-size: 1.45vw;
+  font-weight: 600;
 }
 
-.chart .baseline {
-  stroke: var(--axis);
-  stroke-width: 2;
+/* ---------- 24 h trend inside the day tile ---------- */
+
+.trend {
+  margin-top: auto;
+  padding-top: 0.2vw;
 }
 
-.chart .divider {
-  stroke: var(--muted);
-  stroke-width: 2;
+.trend svg {
+  display: block;
+  width: 100%;
+  height: 2.2vw;
 }
 
-.chart .ghost {
-  fill: var(--ghost);
-}
-
-.chart .bar {
+.trend .tr-bar {
   fill: var(--bar);
 }
 
-.chart .bar-now {
+.trend .tr-now {
   fill: var(--accent);
 }
 
-.chart .bar-warn {
-  fill: var(--warning);
-}
-
-.chart .bar-alert {
+.trend .tr-alert {
   fill: var(--critical);
 }
 
-.chart .limit {
-  stroke: var(--critical);
-  stroke-width: 2;
-  stroke-dasharray: 10 8;
+.trend-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 1vw;
+  font-size: 1vw;
+  color: var(--muted);
+  margin-top: 0.2vw;
 }
 
-.chart .axis {
-  fill: var(--muted);
-  font-size: 21px;
-}
-
-.chart .axis-now {
-  fill: var(--ink);
-  font-size: 23px;
-  font-weight: 700;
-}
-
-.chart .peak {
-  fill: var(--ink);
-  font-size: 22px;
-  font-weight: 600;
+.trend-note {
+  color: var(--ink-2);
 }
 
 /* ---------- footer ---------- */

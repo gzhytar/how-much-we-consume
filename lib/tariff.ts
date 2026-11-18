@@ -114,3 +114,26 @@ export function nextChange(schedule: WeeklySchedule, ms: number): { at: number; 
   }
   return null;
 }
+
+export interface TariffStretch {
+  from: number;
+  to: number;
+  tariff: Tariff;
+}
+
+/** Splits [from, to) into consecutive VT/NT stretches (minute resolution). */
+export function tariffStretches(schedule: WeeklySchedule, from: number, to: number): TariffStretch[] {
+  const out: TariffStretch[] = [];
+  let start = from;
+  let current = tariffAt(schedule, from);
+  for (let t = Math.floor(from / MINUTE) * MINUTE + MINUTE; t < to; t += MINUTE) {
+    const tariff = tariffAt(schedule, t);
+    if (tariff !== current) {
+      out.push({ from: start, to: t, tariff: current });
+      start = t;
+      current = tariff;
+    }
+  }
+  out.push({ from: start, to, tariff: current });
+  return out;
+}
