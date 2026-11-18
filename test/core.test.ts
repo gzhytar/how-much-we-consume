@@ -273,3 +273,21 @@ describe("storage encoding", () => {
     });
   });
 });
+
+describe("Shelly server and network errors", () => {
+  it("normalizes SHELLY_SERVER", async () => {
+    const { baseUrl } = await import("@/lib/shelly");
+    expect(baseUrl("shelly-103-eu.shelly.cloud")).toBe("https://shelly-103-eu.shelly.cloud");
+    expect(baseUrl(" https://shelly-103-eu.shelly.cloud/ ")).toBe("https://shelly-103-eu.shelly.cloud");
+    expect(baseUrl('"https://shelly-103-eu.shelly.cloud/device/status"')).toBe("https://shelly-103-eu.shelly.cloud");
+    expect(() => baseUrl("shelly-XX-eu.shelly.cloud")).toThrow(/SHELLY_SERVER/);
+    expect(() => baseUrl("my shelly")).toThrow(/SHELLY_SERVER/);
+  });
+  it("explains fetch failed", async () => {
+    const { describeFetchError } = await import("@/lib/shelly");
+    const dns = Object.assign(new TypeError("fetch failed"), { cause: { code: "ENOTFOUND", message: "getaddrinfo ENOTFOUND x" } });
+    expect(describeFetchError(dns)).toMatch(/SHELLY_SERVER/);
+    const tls = Object.assign(new TypeError("fetch failed"), { cause: { code: "CERT_HAS_EXPIRED", message: "certificate has expired" } });
+    expect(describeFetchError(tls)).toBe("fetch failed (CERT_HAS_EXPIRED certificate has expired)");
+  });
+});

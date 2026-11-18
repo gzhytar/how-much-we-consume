@@ -17,8 +17,40 @@ export class ShellyError extends Error {}
 
 type Status = Record<string, unknown>;
 
+/**
+ * fetch() with a useful error. Node reports DNS, connection and TLS problems only as
+ * "fetch failed"; the real reason (ENOTFOUND, ECONNREFUSED, certificate…) is in `cause`.
+ */
+async function shellyFetch(url: string, init: RequestInit): Promise<Response> {
+  const host = new URL(url).host;
+  try {
+    return await fetch(url, init);
+  } catch (e) {
+    throw new ShellyError(`Shelly Cloud (${host}) nedostupný: ${describeFetchError(e)}`);
+  }
+}
+
+export function describeFetchError(e: unknown): string {
+  if (!(e instanceof Error)) return String(e);
+  if (e.name === "TimeoutError" || e.name === "AbortError") return "vypršel časový limit";
+  const cause = (e as { cause?: { code?: string; message?: string } }).cause;
+  const code = cause?.code;
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") {
+    return `adresa serveru neexistuje (${code}) – zkontrolujte SHELLY_SERVER, např. shelly-103-eu.shelly.cloud`;
+  }
+  const detail = [code, cause?.message].filter(Boolean).join(" ");
+  return detail ? `${e.message} (${detail})` : e.message;
+}
+
 export function baseUrl(server: string): string {
-  const host = server.trim().replace(/^https?:\/\//, "").replace(/\/+$/, "");
+  const host = server
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "");
+  if (!/^[a-z0-9.-]+(:\d+)?$/i.test(host) || /xx/i.test(host)) {
+    throw new ShellyError(`SHELLY_SERVER "${server}" není platná adresa (očekáváno např. shelly-103-eu.shelly.cloud)`);
+  }
   return `https://${host}`;
 }
 
@@ -29,7 +61,7 @@ export async function fetchShellySample(cfg: ShellyConfig, now = Date.now()): Pr
 
 async function fetchV2(cfg: ShellyConfig): Promise<Status> {
   const url = `${baseUrl(cfg.server)}/v2/devices/api/get?auth_key=${encodeURIComponent(cfg.authKey)}`;
-  const res = await fetch(url, {
+  const res = await shellyFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids: [cfg.deviceId], select: ["status"] }),
@@ -48,7 +80,7 @@ async function fetchV2(cfg: ShellyConfig): Promise<Status> {
 }
 
 async function fetchV1(cfg: ShellyConfig): Promise<Status> {
-  const res = await fetch(`${baseUrl(cfg.server)}/device/status`, {
+  const res = await shellyFetch(`${baseUrl(cfg.server)}/device/status`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ id: cfg.deviceId, auth_key: cfg.authKey }).toString(),
