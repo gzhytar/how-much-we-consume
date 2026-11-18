@@ -2,7 +2,8 @@
 // on the free tier), in-memory for local development and demo mode.
 //
 // Redis layout:
-//   s:raw  sorted set, every reading, kept 2 h      (member "ts:wh:w", score ts)
+//   s:raw  sorted set, every reading, kept 2 h      (member "ts:wh:w[:p1:p2:p3[:e1:e2:e3]]", score ts)
+//          p = live power per phase (W), e = energy counter per phase (Wh); "x" marks a missing triple.
 //   s:5m   sorted set, one reading per 5 min, 35 d  (enough for the 14-day "usual usage" baseline)
 // Readings are cumulative counters, so the 5-minute downsample loses no energy, only time detail.
 
@@ -27,14 +28,23 @@ export interface Store {
   tryLock(key: string, ttlMs: number): Promise<boolean>;
 }
 
-export const encode = (s: Sample) =>
-  `${s.ts}:${round(s.wh, 3)}:${round(s.w, 1)}` + (s.phases?.length === 3 ? `:${s.phases.map((p) => round(p, 1)).join(":")}` : "");
+export function encode(s: Sample): string {
+  const triple = (v: number[] | undefined, d: number) =>
+    v?.length === 3 ? v.map((x) => round(x, d)).join(":") : "x:x:x";
+  let m = `${s.ts}:${round(s.wh, 3)}:${round(s.w, 1)}`;
+  if (s.phases?.length === 3 || s.phaseWh?.length === 3) m += `:${triple(s.phases, 1)}`;
+  if (s.phaseWh?.length === 3) m += `:${triple(s.phaseWh, 3)}`;
+  return m;
+}
 
 export function decode(m: string): Sample | null {
   const [ts, wh, w, ...rest] = m.split(":").map(Number);
   if (!Number.isFinite(ts) || !Number.isFinite(wh)) return null;
   const sample: Sample = { ts, wh, w: Number.isFinite(w) ? w : 0 };
-  if (rest.length === 3 && rest.every(Number.isFinite)) sample.phases = rest;
+  const phases = rest.slice(0, 3);
+  const phaseWh = rest.slice(3, 6);
+  if (phases.length === 3 && phases.every(Number.isFinite)) sample.phases = phases;
+  if (phaseWh.length === 3 && phaseWh.every(Number.isFinite)) sample.phaseWh = phaseWh;
   return sample;
 }
 

@@ -105,8 +105,10 @@ async function fetchV1(cfg: ShellyConfig): Promise<Status> {
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
 /**
- * Reads the cumulative energy counter (Wh) and live power (W) from a Gen2 status object.
- * Pro 3EM in triphase profile: em:0.total_act_power + emdata:0.total_act.
+ * Reads the cumulative energy counter (Wh) and live power (W) from a Gen2 status object,
+ * plus the same per phase when available.
+ * Pro 3EM in triphase profile: em:0.total_act_power + emdata:0.total_act (per phase: a/b/c_act_power,
+ * a/b/c_total_act_energy).
  * Pro 3EM in monophase profile: em1:0..2.act_power + em1data:0..2.total_act_energy (summed).
  */
 export function parseStatus(status: Status, now: number): Sample {
@@ -120,11 +122,13 @@ export function parseStatus(status: Status, now: number): Sample {
     const wh = num(emdata.total_act);
     if (wh === null) throw new ShellyError("Shelly: emdata:0.total_act chybí");
     const phases = ["a", "b", "c"].map((p) => num(em?.[`${p}_act_power`]));
+    const phaseWh = ["a", "b", "c"].map((p) => num(emdata[`${p}_total_act_energy`]));
     return {
       ts,
       wh,
       w: num(em?.total_act_power) ?? 0,
       ...(phases.every((p) => p !== null) ? { phases: phases as number[] } : {}),
+      ...(phaseWh.every((p) => p !== null) ? { phaseWh: phaseWh as number[] } : {}),
     };
   }
 
@@ -132,18 +136,20 @@ export function parseStatus(status: Status, now: number): Sample {
   let w = 0;
   let found = 0;
   const phases: number[] = [];
+  const phaseWh: number[] = [];
   for (let i = 0; i < 3; i++) {
     const d = status[`em1data:${i}`] as Status | undefined;
     if (!d) continue;
     const e = num(d.total_act_energy);
     if (e === null) continue;
     wh += e;
+    phaseWh.push(e);
     const p = num((status[`em1:${i}`] as Status | undefined)?.act_power) ?? 0;
     w += p;
     phases.push(p);
     found++;
   }
-  if (found > 0) return { ts, wh, w, ...(found === 3 ? { phases } : {}) };
+  if (found > 0) return { ts, wh, w, ...(found === 3 ? { phases, phaseWh } : {}) };
 
   const keys = Object.keys(status).filter((k) => k.startsWith("em")).join(", ") || "žádné";
   throw new ShellyError(`Shelly: ve statusu chybí emdata:0 i em1data:N (nalezeno: ${keys})`);

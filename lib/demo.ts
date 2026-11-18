@@ -34,27 +34,36 @@ function extraW(): number {
   return Number.isFinite(v) ? v : 0;
 }
 
-function sampleAt(t: number, wh: number, now: number): Sample {
+const START_PHASE_WH = [400_000, 500_000, 334_000];
+
+function sampleAt(t: number, phaseWh: number[], now: number): Sample {
   const phases = demoPhases(t);
   if (t > now - EXTRA_WINDOW) phases[0] += extraW();
-  return { ts: t, wh, w: phases.reduce((a, b) => a + b, 0), phases };
+  return {
+    ts: t,
+    wh: phaseWh.reduce((a, b) => a + b, 0),
+    w: phases.reduce((a, b) => a + b, 0),
+    phases,
+    phaseWh,
+  };
 }
 
 export function generateDemoSamples(now: number, days = 15, stepMs = MINUTE): Sample[] {
   const out: Sample[] = [];
-  let wh = 1_234_000;
+  let phaseWh = START_PHASE_WH;
   const start = Math.floor((now - days * DAY) / stepMs) * stepMs;
   for (let t = start; t <= now; t += stepMs) {
-    const s = sampleAt(t, wh, now + MINUTE);
+    const s = sampleAt(t, phaseWh, now + MINUTE);
     out.push(s);
-    wh += (s.w * stepMs) / 3_600_000;
+    phaseWh = phaseWh.map((e, i) => e + (s.phases![i] * stepMs) / 3_600_000);
   }
   return out;
 }
 
 /** The next demo reading after `last`, as if the meter had been read now. */
 export function nextDemoSample(last: Sample | null, now: number): Sample {
-  if (!last) return sampleAt(now, 1_234_000, now);
-  const s = sampleAt(now, 0, now);
-  return { ...s, wh: last.wh + ((last.w + s.w) / 2) * ((now - last.ts) / 3_600_000) };
+  if (!last?.phaseWh || !last.phases) return sampleAt(now, START_PHASE_WH, now);
+  const s = sampleAt(now, last.phaseWh, now);
+  const h = (now - last.ts) / 3_600_000;
+  return sampleAt(now, last.phaseWh.map((e, i) => e + ((last.phases![i] + s.phases![i]) / 2) * h), now);
 }

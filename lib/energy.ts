@@ -8,6 +8,8 @@ export interface Sample {
   w: number;
   /** Live power per phase L1–L3 in W, when the meter reports it. */
   phases?: number[];
+  /** Cumulative imported-energy counter per phase L1–L3 in Wh, when the meter reports it. */
+  phaseWh?: number[];
 }
 
 /** A gap longer than this between two readings still has its energy spread out, but doesn't count as "covered". */

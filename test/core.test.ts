@@ -209,6 +209,15 @@ describe("Shelly status parsing", () => {
       now,
     );
     expect(withPhases.phases).toEqual([100, 200, 300]);
+    expect(withPhases.phaseWh).toBeUndefined();
+    const withCounters = parseStatus(
+      {
+        "em:0": { total_act_power: 600, a_act_power: 100, b_act_power: 200, c_act_power: 300 },
+        "emdata:0": { total_act: 60, a_total_act_energy: 10, b_total_act_energy: 20, c_total_act_energy: 30 },
+      },
+      now,
+    );
+    expect(withCounters.phaseWh).toEqual([10, 20, 30]);
   });
   it("sums the monophase profile", () => {
     const s = parseStatus(
@@ -222,7 +231,7 @@ describe("Shelly status parsing", () => {
       },
       now,
     );
-    expect(s).toEqual({ ts: now, wh: 60, w: 600, phases: [100, 200, 300] });
+    expect(s).toEqual({ ts: now, wh: 60, w: 600, phases: [100, 200, 300], phaseWh: [10, 20, 30] });
   });
   it("fails clearly without energy data", () => {
     expect(() => parseStatus({ "switch:0": {} }, now)).toThrow(/emdata:0/);
@@ -276,6 +285,11 @@ describe("storage encoding", () => {
   it("round-trips phases and reads old members without them", () => {
     expect(decode(encode({ ts: 1, wh: 2, w: 3, phases: [1.04, 0, -5] }))).toEqual({ ts: 1, wh: 2, w: 3, phases: [1, 0, -5] });
     expect(decode("1:2:3")).toEqual({ ts: 1, wh: 2, w: 3 });
+  });
+  it("round-trips per-phase energy counters, with or without live phase power", () => {
+    const full = { ts: 1, wh: 2, w: 3, phases: [1, 2, 3], phaseWh: [10.1234, 20, 30] };
+    expect(decode(encode(full))).toEqual({ ...full, phaseWh: [10.123, 20, 30] });
+    expect(decode(encode({ ts: 1, wh: 2, w: 3, phaseWh: [10, 20, 30] }))).toEqual({ ts: 1, wh: 2, w: 3, phaseWh: [10, 20, 30] });
   });
   it("round-trips a sample", () => {
     expect(decode(encode({ ts: 1_763_000_000_000, wh: 12345.6789, w: 456.78 }))).toEqual({
@@ -335,6 +349,36 @@ describe("live rate and chart levels", () => {
     expect(buildSummary({ ...input, pollMinutes: 10 }).stale).toBe(false);
   });
 
+  it("splits the headline by per-phase energy, so the rows add up to it", () => {
+    // Over the last 3 minutes L1 used 1.1 kW, L2 1.5 kW and L3 0.1 kW on average (2.7 kW), but L2
+    // only just jumped to 2.2 kW: the latest live power (3.4 kW) must not be what the rows show.
+    const samples: Sample[] = [];
+    let e = [0, 0, 0];
+    for (let t = now - HOUR; t <= now; t += MINUTE) {
+      const w = t > now - 3 * MINUTE ? [1100, 1500, 100] : [300, 300, 100];
+      const live = t === now ? [1100, 2200, 100] : w;
+      samples.push({ ts: t, wh: e[0] + e[1] + e[2], w: live[0] + live[1] + live[2], phases: live, phaseWh: e });
+      e = e.map((x, i) => x + (w[i] * MINUTE) / HOUR);
+    }
+    const s = buildSummary({ samples, schedule: parseFallback(""), scheduleSource: "t", prices, limits: { hourCzk: 30, dayCzk: 1000 }, now });
+    const live = s.live!;
+    expect(live.phaseSplit).toBe("energy");
+    const sumCzk = live.phases!.reduce((a, p) => a + p.czkShown, 0);
+    const sumKw = live.phases!.reduce((a, p) => a + p.kwShown, 0);
+    expect(sumCzk).toBe(Math.ceil(live.czkPerHour - 1e-9));
+    expect(sumKw).toBeCloseTo(Math.round(live.kw * 10) / 10, 6);
+    expect(live.phases!.reduce((a, p) => a + p.czkPerHour, 0)).toBeCloseTo(live.czkPerHour, 6);
+    // L2's part follows its energy in the window, not its live 2.2 kW.
+    expect(live.phases![1].w / 1000).toBeLessThan(2);
+  });
+
+  it("apportions whole numbers that sum to the total", async () => {
+    const { apportion } = await import("@/lib/summary");
+    expect(apportion([1.1, 2.2, 0.1], 13)).toEqual([4, 9, 0]);
+    expect(apportion([1, 1, 1], 10).reduce((a, b) => a + b, 0)).toBe(10);
+    expect(apportion([0, 0, 0], 5)).toEqual([0, 0, 0]);
+  });
+
   it("averages the last 5 minutes into Kč/h and flags it against the hourly limit", () => {
     // 1 kW all day, then 4 kW extra for the last 5 minutes.
     const samples: Sample[] = [];
@@ -357,12 +401,14 @@ describe("live rate and chart levels", () => {
     expect(s.live?.czkPerHour).toBeCloseTo(30, 6);
     expect(s.live?.level).toBe("alert");
     expect(s.level).toBe("alert");
-    // Each phase is priced at the current tariff (VT 6 Kč/kWh here).
-    expect(s.live?.phases).toEqual([
-      { name: "Kuchyň", w: 4000, czkPerHour: 24 },
-      { name: "L2", w: 1000, czkPerHour: 6 },
-      { name: "Bojler", w: 0, czkPerHour: 0 },
+    // No per-phase counters here, so the headline is split by the latest live power.
+    expect(s.live?.phaseSplit).toBe("power");
+    expect(s.live?.phases?.map((p) => [p.name, p.czkShown, p.kwShown])).toEqual([
+      ["Kuchyň", 24, 4],
+      ["L2", 6, 1],
+      ["Bojler", 0, 0],
     ]);
+    expect(s.live?.phases?.[0].czkPerHour).toBeCloseTo(24, 6);
     expect(s.tips[0]).toMatch(/Právě teď.*Nejvíc stojí Kuchyň \(24 Kč za hodinu\)/);
     expect(s.timeline.stretches[0].from).toBe(now);
   });

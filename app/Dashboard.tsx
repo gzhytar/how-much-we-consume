@@ -207,13 +207,14 @@ function LiveTile({ live, limit }: { live: LiveSummary | null; limit: number }) 
 }
 
 /**
- * "Co teď běží": what each circuit costs per hour right now. Bars share the hourly limit's scale,
+ * "Co teď běží": each circuit's part of the headline Kč/h, over the same window, so the rows add up
+ * to it. Bars share the hourly limit's scale,
  * so a bar's length means the same as the main meter; the costliest circuit is highlighted.
  */
 function PhaseCosts({ phases, limit }: { phases: PhasePower[]; limit: number }) {
   const scale = Math.max(limit, ...phases.map((p) => p.czkPerHour), 1);
   const top = phases.reduce((a, b) => (b.czkPerHour > a.czkPerHour ? b : a), phases[0]);
-  const label = phases.map((p) => `${p.name} ${phaseCzk(p.czkPerHour)} Kč za hodinu`).join(", ");
+  const label = phases.map((p) => `${p.name} ${phaseCzk(p)} Kč za hodinu`).join(", ");
   return (
     <div className="phases" role="group" aria-label={`Co teď běží: ${label}`}>
       <div className="phases-head">
@@ -221,7 +222,7 @@ function PhaseCosts({ phases, limit }: { phases: PhasePower[]; limit: number }) 
         <span className="phases-unit">Kč za hodinu</span>
       </div>
       {phases.map((p) => {
-        const isTop = p === top && p.czkPerHour >= 1;
+        const isTop = p === top && p.czkShown >= 1;
         return (
           <div className={`phase${isTop ? " is-top" : ""}`} key={p.name}>
             <span className="phase-name">{p.name}</span>
@@ -229,8 +230,8 @@ function PhaseCosts({ phases, limit }: { phases: PhasePower[]; limit: number }) 
               <span className="phase-fill" style={{ width: `${Math.min(100, (p.czkPerHour / scale) * 100)}%` }} />
             </span>
             <span className="phase-value">
-              {phaseCzk(p.czkPerHour)}
-              <span className="phase-kw">{kw(p.w)} kW</span>
+              {phaseCzk(p)}
+              <span className="phase-kw">{p.kwShown.toLocaleString("cs-CZ", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kW</span>
             </span>
           </div>
         );
@@ -239,9 +240,9 @@ function PhaseCosts({ phases, limit }: { phases: PhasePower[]; limit: number }) 
   );
 }
 
-/** Whole crowns rounded up, like every cost on the screen; under 1 Kč reads "<1" rather than "1". */
-function phaseCzk(v: number): string {
-  return v > 0 && v < 1 ? "<1" : czk(v);
+/** The phase's whole crowns (they add up to the headline); a phase that costs something but rounds to 0 reads "<1". */
+function phaseCzk(p: PhasePower): string {
+  return p.czkShown === 0 && p.czkPerHour > 0.05 ? "<1" : String(p.czkShown);
 }
 
 function PeriodTile({
