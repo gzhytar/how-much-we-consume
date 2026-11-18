@@ -3,7 +3,7 @@
 A TV dashboard that shows what the household's electricity costs: the **past hour** and the **past 24 hours** in CZK, the current power, VT/NT tariff and when it changes, and an hourly chart. A tile turns amber or red when the cost crosses a fixed CZK limit or is well above usual for that time of day.
 
 ```
-cron-job.org (every 1 min) ─► /api/collect ─► Shelly Cloud API ─► Upstash Redis
+Upstash QStash (every 3 min) ─► /api/collect ─► Shelly Cloud API ─► Upstash Redis
 Google TV (Fully Kiosk) ─► /?t=TOKEN ─► /api/summary (every 60 s)
 ```
 
@@ -17,7 +17,9 @@ Google TV (Fully Kiosk) ─► /?t=TOKEN ─► /api/summary (every 60 s)
   - Past 24 h: compared with the median of the previous 14 days.
   - Amber above 1.3×, red above 1.6×, but only when the difference is at least 2 CZK (hour) or 15 CZK (day).
 - **Storage:** every reading is kept for 2 h, then one per 5 min for 35 days.
-- **Upstash free tier** (500k commands and 10 GB bandwidth a month): the 1-minute collector uses about 190k commands. Each dashboard poll (every 60 s) uses about 4 commands and reads about 130 KB. With the TV showing the page 24 h a day, that adds about 175k commands and 5.5 GB, for a total of about 365k commands. At 12 h a day it's about half that. If the dashboard runs on several screens at once, watch the Upstash usage page.
+- **Upstash free tiers:**
+  - QStash: the 3-minute schedule sends 480 messages a day. That's under the free daily cap, which the docs give as 1,000 and the pricing page as 500.
+  - Redis (500k commands and 10 GB a month): the scheduled readings use about 100k commands. While the TV shows the page, it polls every 60 s and takes its own reading when the newest one is over 90 s old. That's about 10k commands and 180 MB per hour of screen time, so with the TV on all day the total is roughly 400k commands and 5.5 GB. If the page runs on several screens at once, watch the Upstash usage page.
 
 ## Setup
 
@@ -29,10 +31,16 @@ Google TV (Fully Kiosk) ─► /?t=TOKEN ─► /api/summary (every 60 s)
    - Import this repo as a new project.
    - Under *Storage*, add **Upstash for Redis** from the Marketplace (free plan). This sets `KV_REST_API_URL` / `KV_REST_API_TOKEN`.
    - Add the other variables from `.env.example`. `DASHBOARD_TOKEN` and `COLLECT_SECRET` are mandatory in production; generate them with `openssl rand -hex 24`.
-3. **Every-minute reading**
-   - Vercel Hobby cron can only run once a day. Create a free job at <https://cron-job.org>: URL `https://<your-app>.vercel.app/api/collect?key=<COLLECT_SECRET>`, every 1 minute.
-   - On Vercel Pro you can use a Vercel Cron instead. Set `CRON_SECRET` to the same value, and add `vercel.json` with `{"crons":[{"path":"/api/collect","schedule":"* * * * *"}]}`.
-   - While the dashboard is open it also triggers a reading itself when the newest one is older than 90 s.
+3. **Readings every 3 minutes (Upstash QStash)**
+   - Vercel Hobby cron can only run once a day, so QStash calls `/api/collect` on a schedule. Every call is signed, and the app checks the signature.
+   - Add **QStash** in Vercel under *Storage* (Upstash in the Marketplace), or copy the keys from the QStash page of the Upstash console. Set `QSTASH_TOKEN`, `QSTASH_CURRENT_SIGNING_KEY` and `QSTASH_NEXT_SIGNING_KEY` in Vercel, then redeploy.
+   - Create the schedule once from your computer:
+     `QSTASH_TOKEN=<token> npm run schedule -- https://<your-app>.vercel.app`
+     Rerunning the command updates the same schedule. You can also create it in the console with the same settings: destination `https://<your-app>.vercel.app/api/collect`, method POST, cron `*/3 * * * *`, retries 0.
+   - The app accepts only signatures made for its production URL (`VERCEL_PROJECT_PRODUCTION_URL`). If the schedule uses another domain, set `QSTASH_COLLECT_URL` to the exact destination URL.
+   - Check the deliveries under *QStash → Logs*. A 401 means a signing-key or URL mismatch, and it's logged in Vercel as `QStash signature rejected (…)`. Keep Vercel Deployment Protection off for production, or QStash can't reach the app.
+   - Alternatives: a free <https://cron-job.org> job calling `/api/collect?key=<COLLECT_SECRET>`, or on Vercel Pro a Vercel Cron with `CRON_SECRET`.
+   - While the dashboard is open it also takes a reading itself when the newest one is older than 90 s, so the live power stays current.
 4. **EG.D HDO code**
    - Set `EGD_HDO_CODE` to the povel printed on the HDO receiver (e.g. `A1B4DP6`) or to the code shown on egd.cz *Časy platnosti nízkého tarifu*.
    - Also set `EGD_HDO_TARIFF` (e.g. `D25d`). Set `EGD_HDO_REGION` only if the footer asks for it.
@@ -47,7 +55,7 @@ Google TV (Fully Kiosk) ─► /?t=TOKEN ─► /api/summary (every 60 s)
 ```bash
 npm install
 npm run dev:demo      # synthetic 15-day household at http://localhost:3000
-npm test              # unit tests: tariff, DST, counter deltas, thresholds, HDO matching, Shelly parsing
+npm test              # unit tests: tariff, DST, counter deltas, thresholds, HDO matching, Shelly parsing, QStash signatures
 cp .env.example .env.local && npm run dev   # with your real meter (data kept in memory without Redis)
 ```
 
