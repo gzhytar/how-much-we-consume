@@ -84,8 +84,12 @@ export interface Summary {
   hour: PeriodSummary;
   day: PeriodSummary;
   bars: Bar[];
-  /** VT/NT stretches from now to TIMELINE_HOURS ahead, and one sentence on when to run big appliances. */
-  timeline: { stretches: TariffStretch[]; hint: string };
+  /**
+   * VT/NT stretches from now to TIMELINE_HOURS ahead; a short headline stating when power is cheap
+   * (the timeline's title); and one sentence on when to run big appliances (shown in the banner when
+   * nothing is wrong), or null when there's no advice to give.
+   */
+  timeline: { stretches: TariffStretch[]; headline: string; hint: string | null };
   historyDays: number;
   level: Level;
   tips: string[];
@@ -220,7 +224,7 @@ export function buildSummary(input: SummaryInput): Summary {
     hour,
     day,
     bars,
-    timeline: { stretches, hint: timelineHint(current, change, now) },
+    timeline: { stretches, ...timelineText(current, change, now) },
     historyDays,
     level: worst(live?.level, hour.level, day.level),
     tips,
@@ -274,16 +278,29 @@ export function fmtDuration(ms: number): string {
   return m === 0 ? `${h} h` : `${h} h ${m} min`;
 }
 
-function timelineHint(current: Tariff, change: { at: number; to: Tariff } | null, now: number): string {
+function timelineText(
+  current: Tariff,
+  change: { at: number; to: Tariff } | null,
+  now: number,
+): { headline: string; hint: string | null } {
   const within = change && change.at - now <= TIMELINE_HOURS * HOUR;
   if (current === "VT") {
     return within
-      ? `Levný tarif za ${fmtDuration(change.at - now)} (od ${fmtTime(change.at)}) – pračku, myčku a sušičku spusťte až potom.`
-      : `V příštích ${TIMELINE_HOURS} hodinách levný tarif nebude.`;
+      ? {
+          headline: `Levný tarif za ${fmtDuration(change.at - now)} (od ${fmtTime(change.at)})`,
+          hint: `Levný tarif za ${fmtDuration(change.at - now)} (od ${fmtTime(change.at)}) – pračku, myčku a sušičku spusťte až potom.`,
+        }
+      : { headline: `Příštích ${TIMELINE_HOURS} h levný tarif nebude`, hint: null };
   }
   return within
-    ? `Teď je levný tarif ještě ${fmtDuration(change.at - now)} (do ${fmtTime(change.at)}) – dobrá chvíle pro pračku a myčku.`
-    : `Levný tarif platí celých příštích ${TIMELINE_HOURS} hodin.`;
+    ? {
+        headline: `Levný tarif ještě ${fmtDuration(change.at - now)} (do ${fmtTime(change.at)})`,
+        hint: `Teď je levný tarif ještě ${fmtDuration(change.at - now)} (do ${fmtTime(change.at)}) – dobrá chvíle pro pračku a myčku.`,
+      }
+    : {
+        headline: `Levný tarif celých příštích ${TIMELINE_HOURS} h`,
+        hint: `Levný tarif platí celých příštích ${TIMELINE_HOURS} hodin – dobrá chvíle pro pračku a myčku.`,
+      };
 }
 
 export function fmtKw(w: number): string {

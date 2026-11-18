@@ -70,9 +70,10 @@ export default function Dashboard({ token }: { token: string }) {
 
   const t = data.tariff;
   const stale = data.stale || !!error;
-  const banner = stale
+  // One "what to do" slot: stale-data warning, else the worst consumption tip, else tariff advice.
+  const banner: { level: Level | "info"; text: string } | null = stale
     ? {
-        level: "warn" as Level,
+        level: "warn",
         text: error
           ? "⚠ Bez spojení se serverem – čísla nemusí být aktuální."
           : data.lastSampleAt
@@ -81,7 +82,9 @@ export default function Dashboard({ token }: { token: string }) {
       }
     : data.tips.length > 0
       ? { level: data.level, text: data.tips[0] }
-      : null;
+      : data.timeline.hint
+        ? { level: "info", text: data.timeline.hint }
+        : null;
 
   return (
     <main
@@ -99,7 +102,7 @@ export default function Dashboard({ token }: { token: string }) {
       </header>
 
       <section className="tiles">
-        <LiveTile live={data.live} limit={data.hour.limitCzk} tariffLabel={`${t.current} ${price(t.priceNow)} Kč/kWh`} />
+        <LiveTile live={data.live} limit={data.hour.limitCzk} />
         <div className="side">
           <PeriodTile title="Poslední hodina" p={data.hour} stale={stale} />
           <PeriodTile title="Posledních 24 hodin" p={data.day} stale={stale}>
@@ -114,7 +117,7 @@ export default function Dashboard({ token }: { token: string }) {
         </section>
       )}
 
-      <TariffTimeline stretches={data.timeline.stretches} hint={data.timeline.hint} prices={t.prices} />
+      <TariffTimeline stretches={data.timeline.stretches} headline={data.timeline.headline} prices={t.prices} />
 
       <footer className="foot">
         {data.lastSampleAt && <span>Poslední měření {time(data.lastSampleAt)}</span>}
@@ -173,7 +176,7 @@ function VsUsual({ pct, level }: { pct: number | null; level: Level | null }) {
   );
 }
 
-function LiveTile({ live, limit, tariffLabel }: { live: LiveSummary | null; limit: number; tariffLabel: string }) {
+function LiveTile({ live, limit }: { live: LiveSummary | null; limit: number }) {
   const level = live?.level ?? "ok";
   const maxPhase = live?.phases ? Math.max(1000, ...live.phases.map((p) => p.w)) : 1;
   return (
@@ -189,7 +192,7 @@ function LiveTile({ live, limit, tariffLabel }: { live: LiveSummary | null; limi
             <span className="unit"> Kč/h</span>
           </div>
           <p className="sub">
-            {live ? `${kw(live.kw * 1000)} kW · průměr za 5 min · ${tariffLabel}` : "bez aktuálních dat"}
+            {live ? `${kw(live.kw * 1000)} kW · průměr za 5 min` : "bez aktuálních dat"}
           </p>
           {live && <Meter value={live.czkPerHour} limit={limit} level={live.limitLevel} />}
           <p className="sub row">
@@ -285,8 +288,8 @@ function Trend({ bars }: { bars: Bar[] }) {
   );
 }
 
-/** "When is electricity cheap": the next 12 hours as VT/NT blocks, labelled with price and times. */
-function TariffTimeline({ stretches, hint, prices }: { stretches: TariffStretch[]; hint: string; prices: Prices }) {
+/** "When is electricity cheap": the next 12 hours as VT/NT blocks, titled with the takeaway. */
+function TariffTimeline({ stretches, headline, prices }: { stretches: TariffStretch[]; headline: string; prices: Prices }) {
   if (stretches.length === 0) return null;
   const from = stretches[0].from;
   const to = stretches[stretches.length - 1].to;
@@ -307,7 +310,7 @@ function TariffTimeline({ stretches, hint, prices }: { stretches: TariffStretch[
   return (
     <section className="timeline" aria-label="Kdy je elektřina levná">
       <div className="timeline-head">
-        <h2>Kdy je elektřina levná</h2>
+        <h2>{headline}</h2>
         <span className="sub">příštích {Math.round(span / HOUR)} hodin</span>
       </div>
       <div className="tl-strip">
@@ -336,7 +339,6 @@ function TariffTimeline({ stretches, hint, prices }: { stretches: TariffStretch[
           </span>
         ))}
       </div>
-      <p className="tl-hint">{hint}</p>
     </section>
   );
 }

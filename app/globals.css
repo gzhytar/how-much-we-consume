@@ -383,6 +383,12 @@ p {
   border-left-color: var(--critical);
 }
 
+/* Tariff advice when nothing is wrong: neutral, so it isn't read as a green "ok" status. */
+.tip-info {
+  border-left-color: var(--ink-2);
+  font-weight: 500;
+}
+
 /* Stale data: dim the meter numbers so nobody acts on them; the banner says why.
    The tariff timeline comes from the HDO schedule, not the meter, so it stays bright. */
 .is-stale .tiles {
@@ -408,9 +414,9 @@ p {
 }
 
 .timeline-head h2 {
-  font-size: 1.4vw;
-  font-weight: 500;
-  color: var(--ink-2);
+  font-size: 1.45vw;
+  font-weight: 600;
+  color: var(--ink);
 }
 
 .tl-strip {
@@ -470,11 +476,6 @@ p {
 .tl-now {
   color: var(--ink);
   font-weight: 700;
-}
-
-.tl-hint {
-  font-size: 1.45vw;
-  font-weight: 600;
 }
 
 /* ---------- 24 h trend inside the day tile ---------- */

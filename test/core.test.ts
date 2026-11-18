@@ -362,6 +362,7 @@ describe("live rate and chart levels", () => {
       { from: now + 5 * HOUR, to: now + 11 * HOUR, tariff: "NT" },
       { from: now + 11 * HOUR, to: now + 12 * HOUR, tariff: "VT" },
     ]);
+    expect(s.timeline.headline).toBe("Levný tarif za 5 h (od 00:00)");
     expect(s.timeline.hint).toBe("Levný tarif za 5 h (od 00:00) – pračku, myčku a sušičku spusťte až potom.");
   });
 
@@ -403,6 +404,7 @@ describe("display helpers", () => {
       limits: { hourCzk: 20, dayCzk: 200 },
       now: at,
     });
+    expect(s.timeline.headline).toBe("Levný tarif ještě 5 h (do 06:00)");
     expect(s.timeline.hint).toBe("Teď je levný tarif ještě 5 h (do 06:00) – dobrá chvíle pro pračku a myčku.");
   });
 });
