@@ -20,6 +20,8 @@ export interface AppConfig {
   hdoFallback: string;
   dashboardToken: string | null;
   collectSecrets: string[];
+  /** Names for L1–L3 shown on the dashboard, e.g. "Kuchyň,Obývák,Bojler". */
+  phaseNames: string[];
 }
 
 export function getConfig(): AppConfig {
@@ -51,6 +53,10 @@ export function getConfig(): AppConfig {
     // Placeholder default: NT 00:00–06:00 and 13:00–15:00 every day. Replace with your own windows.
     hdoFallback: process.env.HDO_FALLBACK?.trim() || "00:00-06:00,13:00-15:00",
     dashboardToken: process.env.DASHBOARD_TOKEN?.trim() || null,
+    phaseNames: (process.env.PHASE_NAMES ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .slice(0, 3),
     collectSecrets: [process.env.COLLECT_SECRET, process.env.CRON_SECRET]
       .map((s) => s?.trim())
       .filter((s): s is string => !!s),

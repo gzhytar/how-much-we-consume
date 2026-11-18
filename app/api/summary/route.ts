@@ -40,6 +40,7 @@ export async function GET(req: Request) {
     limits: cfg.limits,
     now,
     warnings,
+    phaseNames: cfg.phaseNames,
   });
   return NextResponse.json(summary, { headers: { "Cache-Control": "no-store" } });
 }

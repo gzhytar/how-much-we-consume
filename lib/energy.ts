@@ -6,6 +6,8 @@ export interface Sample {
   ts: number; // epoch ms
   wh: number;
   w: number;
+  /** Live power per phase L1–L3 in W, when the meter reports it. */
+  phases?: number[];
 }
 
 /** A gap longer than this between two readings still has its energy spread out, but doesn't count as "covered". */

@@ -201,6 +201,14 @@ describe("Shelly status parsing", () => {
       now,
     );
     expect(s).toEqual({ ts: now, wh: 98765.4, w: 1234.5 });
+    const withPhases = parseStatus(
+      {
+        "em:0": { total_act_power: 600, a_act_power: 100, b_act_power: 200, c_act_power: 300 },
+        "emdata:0": { total_act: 5 },
+      },
+      now,
+    );
+    expect(withPhases.phases).toEqual([100, 200, 300]);
   });
   it("sums the monophase profile", () => {
     const s = parseStatus(
@@ -214,7 +222,7 @@ describe("Shelly status parsing", () => {
       },
       now,
     );
-    expect(s).toEqual({ ts: now, wh: 60, w: 600 });
+    expect(s).toEqual({ ts: now, wh: 60, w: 600, phases: [100, 200, 300] });
   });
   it("fails clearly without energy data", () => {
     expect(() => parseStatus({ "switch:0": {} }, now)).toThrow(/emdata:0/);
@@ -265,6 +273,10 @@ describe("EG.D HDO selection", () => {
 });
 
 describe("storage encoding", () => {
+  it("round-trips phases and reads old members without them", () => {
+    expect(decode(encode({ ts: 1, wh: 2, w: 3, phases: [1.04, 0, -5] }))).toEqual({ ts: 1, wh: 2, w: 3, phases: [1, 0, -5] });
+    expect(decode("1:2:3")).toEqual({ ts: 1, wh: 2, w: 3 });
+  });
   it("round-trips a sample", () => {
     expect(decode(encode({ ts: 1_763_000_000_000, wh: 12345.6789, w: 456.78 }))).toEqual({
       ts: 1_763_000_000_000,
@@ -290,5 +302,73 @@ describe("Shelly server and network errors", () => {
     expect(describeFetchError(dns)).toMatch(/SHELLY_SERVER/);
     const tls = Object.assign(new TypeError("fetch failed"), { cause: { code: "CERT_HAS_EXPIRED", message: "certificate has expired" } });
     expect(describeFetchError(tls)).toBe("fetch failed (CERT_HAS_EXPIRED certificate has expired)");
+  });
+});
+
+describe("live rate and chart levels", () => {
+  const now = cet("2026-11-18 19:00");
+  const base = (w: number, extra = 0) =>
+    constant(now - DAY, now, w).map((x, i, all) =>
+      i >= all.length - 5 ? { ...x, phases: [extra, w, 0] } : { ...x, phases: [0, w, 0] },
+    );
+
+  it("averages the last 5 minutes into Kč/h and flags it against the hourly limit", () => {
+    // 1 kW all day, then 4 kW extra for the last 5 minutes.
+    const samples: Sample[] = [];
+    let wh = 0;
+    for (let t = now - DAY; t <= now; t += MINUTE) {
+      const w = t >= now - 5 * MINUTE ? 5000 : 1000;
+      samples.push({ ts: t, wh, w, phases: [w - 1000, 1000, 0] });
+      wh += (w * MINUTE) / HOUR;
+    }
+    const s = buildSummary({
+      samples,
+      schedule: parseFallback(""),
+      scheduleSource: "t",
+      prices,
+      limits: { hourCzk: 20, dayCzk: 1000 },
+      now,
+      phaseNames: ["Kuchyň", "", "Bojler"],
+    });
+    expect(s.live?.kw).toBeCloseTo(5, 6);
+    expect(s.live?.czkPerHour).toBeCloseTo(30, 6);
+    expect(s.live?.level).toBe("alert");
+    expect(s.level).toBe("alert");
+    expect(s.live?.phases).toEqual([
+      { name: "Kuchyň", w: 4000 },
+      { name: "L2", w: 1000 },
+      { name: "Bojler", w: 0 },
+    ]);
+    expect(s.tips[0]).toMatch(/Právě teď.*Nejvíc odebírá Kuchyň/);
+    expect(s.upcoming).toHaveLength(8);
+  });
+
+  it("marks bars over the hourly limit", () => {
+    const s = buildSummary({
+      samples: base(4000),
+      schedule: parseFallback("00:00-06:00"),
+      scheduleSource: "t",
+      prices,
+      limits: { hourCzk: 20, dayCzk: 1000 },
+      now,
+    });
+    // 4 kW costs 24 Kč/h in VT (over the 20 Kč limit) but only 12 Kč/h in NT.
+    const full = s.bars.slice(0, 23);
+    expect(full.filter((b) => b.ntShare === 0).every((b) => b.level === "alert")).toBe(true);
+    expect(full.filter((b) => b.ntShare === 1).every((b) => b.level === "ok")).toBe(true);
+    // Upcoming hours 20:00–03:00 → NT from 00:00.
+    expect(s.upcoming.map((u) => u.ntShare)).toEqual([0, 0, 0, 0, 1, 1, 1, 1]);
+  });
+
+  it("has no live value when the data is stale", () => {
+    const s = buildSummary({
+      samples: constant(now - DAY, now - 10 * MINUTE, 500),
+      schedule: parseFallback(""),
+      scheduleSource: "t",
+      prices,
+      limits: { hourCzk: 20, dayCzk: 200 },
+      now,
+    });
+    expect(s.live).toBeNull();
   });
 });

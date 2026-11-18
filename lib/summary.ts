@@ -11,6 +11,10 @@ import {
 import { DAY, HOUR, MINUTE, floorHour } from "./time";
 
 export const STALE_AFTER = 5 * MINUTE;
+/** "Right now" is the average over this window, so a kettle doesn't spike the headline. */
+export const LIVE_WINDOW = 5 * MINUTE;
+/** How many hours ahead the chart shows the VT/NT schedule. */
+export const UPCOMING_HOURS = 8;
 /** The "usual usage" comparison is only switched on after this much history. */
 export const MIN_HISTORY_DAYS = 7;
 
@@ -39,6 +43,32 @@ export interface Bar {
   ntShare: number; // share of the hour scheduled as NT, 0…1
   usualCzk: number | null;
   partial: boolean;
+  /** alert = over the hourly limit, warn = well above usual for that hour. */
+  level: Level;
+}
+
+export interface UpcomingHour {
+  start: number;
+  ntShare: number;
+}
+
+export interface PhasePower {
+  name: string;
+  w: number;
+}
+
+/** Cost rate right now, averaged over LIVE_WINDOW and compared with the hourly limit. */
+export interface LiveSummary {
+  kw: number;
+  czkPerHour: number;
+  limitCzkPerHour: number;
+  limitLevel: Level;
+  usualCzkPerHour: number | null;
+  usualLevel: Level | null;
+  vsUsualPct: number | null;
+  level: Level;
+  /** Live (not averaged) power per phase from the latest reading. */
+  phases: PhasePower[] | null;
 }
 
 export interface Summary {
@@ -46,6 +76,7 @@ export interface Summary {
   lastSampleAt: number | null;
   stale: boolean;
   powerW: number | null;
+  live: LiveSummary | null;
   tariff: {
     current: Tariff;
     nextChangeAt: number | null;
@@ -57,6 +88,7 @@ export interface Summary {
   hour: PeriodSummary;
   day: PeriodSummary;
   bars: Bar[];
+  upcoming: UpcomingHour[];
   historyDays: number;
   level: Level;
   tips: string[];
@@ -71,6 +103,7 @@ export interface SummaryInput {
   limits: Limits;
   now: number;
   warnings?: string[];
+  phaseNames?: string[];
 }
 
 export function buildSummary(input: SummaryInput): Summary {
@@ -95,31 +128,78 @@ export function buildSummary(input: SummaryInput): Summary {
     minExtraCzk: 15,
   });
 
+  const ntShare = (start: number) => {
+    let ntMinutes = 0;
+    for (let m = start; m < start + HOUR; m += 5 * MINUTE) if (tariffAt(schedule, m) === "NT") ntMinutes += 5;
+    return ntMinutes / 60;
+  };
+
   const bars: Bar[] = [];
   const currentHour = floorHour(now);
   for (let i = 23; i >= 0; i--) {
     const start = currentHour - i * HOUR;
     const r = sumRange(ledger, start, start + HOUR);
-    let ntMinutes = 0;
-    for (let m = start; m < start + HOUR; m += 5 * MINUTE) if (tariffAt(schedule, m) === "NT") ntMinutes += 5;
     const usual = baselineOn
       ? baselineFor(ledger, start, start + HOUR, { sameDayType: true, minDays: 3 })
       : null;
+    const overLimit = limits.hourCzk > 0 && r.czk >= limits.hourCzk;
+    const overUsual = usual ? levelFromBaseline(r.czk, usual.median, 2) !== "ok" : false;
     bars.push({
       start,
       czk: r.czk,
       kwh: r.kwh,
-      ntShare: ntMinutes / 60,
+      ntShare: ntShare(start),
       usualCzk: usual ? usual.median : null,
       partial: i === 0,
+      level: overLimit ? "alert" : overUsual && i > 0 ? "warn" : "ok",
     });
+  }
+  const upcoming: UpcomingHour[] = [];
+  for (let i = 1; i <= UPCOMING_HOURS; i++) {
+    const start = currentHour + i * HOUR;
+    upcoming.push({ start, ntShare: ntShare(start) });
   }
 
   const current = tariffAt(schedule, now);
   const change = nextChange(schedule, now);
   const stale = !latest || now - latest.ts > STALE_AFTER;
 
+  let live: LiveSummary | null = null;
+  if (latest && !stale) {
+    const r = sumRange(ledger, end - LIVE_WINDOW, end);
+    const perHour = HOUR / LIVE_WINDOW;
+    const czkPerHour = r.czk * perHour;
+    const limitLevel = levelFromLimit(czkPerHour, limits.hourCzk);
+    const usualCzkPerHour = hour.usual ? hour.usual.median : null;
+    const usualLevel = usualCzkPerHour !== null ? levelFromBaseline(czkPerHour, usualCzkPerHour, 3) : null;
+    const names = input.phaseNames ?? [];
+    live = {
+      kw: r.kwh * perHour,
+      czkPerHour,
+      limitCzkPerHour: limits.hourCzk,
+      limitLevel,
+      usualCzkPerHour,
+      usualLevel,
+      vsUsualPct: usualCzkPerHour && usualCzkPerHour > 0 ? (czkPerHour / usualCzkPerHour - 1) * 100 : null,
+      level: worst(limitLevel, usualLevel),
+      phases:
+        latest.phases?.length === 3
+          ? latest.phases.map((w, i) => ({ name: names[i] || `L${i + 1}`, w: Math.max(0, w) }))
+          : null,
+    };
+  }
+
   const tips: string[] = [];
+  if (live && live.limitLevel === "alert") {
+    const top = live.phases ? [...live.phases].sort((a, b) => b.w - a.w)[0] : null;
+    tips.push(
+      `Právě teď to stojí ${fmtCzk(live.czkPerHour)} za hodinu – nad limitem ${fmtCzk(live.limitCzkPerHour)}.` +
+        (top && top.w > 300 ? ` Nejvíc odebírá ${top.name} (${fmtKw(top.w)}).` : "") +
+        " Co můžete vypnout?",
+    );
+  } else if (live && live.usualLevel && live.usualLevel !== "ok" && live.vsUsualPct !== null) {
+    tips.push(`Právě teď o ${Math.round(live.vsUsualPct)} % víc než obvykle v tuto dobu.`);
+  }
   if (hour.limitLevel === "alert") {
     tips.push(`Poslední hodina stála ${fmtCzk(hour.czk)} – nad limitem ${fmtCzk(hour.limitCzk)}. Vypněte, co právě nepotřebujete.`);
   } else if (hour.usualLevel && hour.usualLevel !== "ok" && hour.vsUsualPct !== null) {
@@ -139,6 +219,7 @@ export function buildSummary(input: SummaryInput): Summary {
     lastSampleAt: latest ? latest.ts : null,
     stale,
     powerW: latest && !stale ? latest.w : null,
+    live,
     tariff: {
       current,
       nextChangeAt: change ? change.at : null,
@@ -150,8 +231,9 @@ export function buildSummary(input: SummaryInput): Summary {
     hour,
     day,
     bars,
+    upcoming,
     historyDays,
-    level: worst(hour.level, day.level),
+    level: worst(live?.level, hour.level, day.level),
     tips,
     warnings: input.warnings ?? [],
   };
@@ -188,6 +270,10 @@ function period(
 
 export function fmtCzk(v: number): string {
   return `${v.toLocaleString("cs-CZ", { maximumFractionDigits: v < 100 ? 1 : 0, minimumFractionDigits: v < 100 ? 1 : 0 })} Kč`;
+}
+
+export function fmtKw(w: number): string {
+  return `${(w / 1000).toLocaleString("cs-CZ", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kW`;
 }
 
 export function fmtTime(ms: number): string {

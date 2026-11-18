@@ -119,22 +119,31 @@ export function parseStatus(status: Status, now: number): Sample {
   if (emdata) {
     const wh = num(emdata.total_act);
     if (wh === null) throw new ShellyError("Shelly: emdata:0.total_act chybí");
-    return { ts, wh, w: num(em?.total_act_power) ?? 0 };
+    const phases = ["a", "b", "c"].map((p) => num(em?.[`${p}_act_power`]));
+    return {
+      ts,
+      wh,
+      w: num(em?.total_act_power) ?? 0,
+      ...(phases.every((p) => p !== null) ? { phases: phases as number[] } : {}),
+    };
   }
 
   let wh = 0;
   let w = 0;
   let found = 0;
+  const phases: number[] = [];
   for (let i = 0; i < 3; i++) {
     const d = status[`em1data:${i}`] as Status | undefined;
     if (!d) continue;
     const e = num(d.total_act_energy);
     if (e === null) continue;
     wh += e;
-    w += num((status[`em1:${i}`] as Status | undefined)?.act_power) ?? 0;
+    const p = num((status[`em1:${i}`] as Status | undefined)?.act_power) ?? 0;
+    w += p;
+    phases.push(p);
     found++;
   }
-  if (found > 0) return { ts, wh, w };
+  if (found > 0) return { ts, wh, w, ...(found === 3 ? { phases } : {}) };
 
   const keys = Object.keys(status).filter((k) => k.startsWith("em")).join(", ") || "žádné";
   throw new ShellyError(`Shelly: ve statusu chybí emdata:0 i em1data:N (nalezeno: ${keys})`);

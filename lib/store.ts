@@ -27,11 +27,15 @@ export interface Store {
   tryLock(key: string, ttlMs: number): Promise<boolean>;
 }
 
-export const encode = (s: Sample) => `${s.ts}:${round(s.wh, 3)}:${round(s.w, 1)}`;
+export const encode = (s: Sample) =>
+  `${s.ts}:${round(s.wh, 3)}:${round(s.w, 1)}` + (s.phases?.length === 3 ? `:${s.phases.map((p) => round(p, 1)).join(":")}` : "");
 
 export function decode(m: string): Sample | null {
-  const [ts, wh, w] = m.split(":").map(Number);
-  return Number.isFinite(ts) && Number.isFinite(wh) ? { ts, wh, w: Number.isFinite(w) ? w : 0 } : null;
+  const [ts, wh, w, ...rest] = m.split(":").map(Number);
+  if (!Number.isFinite(ts) || !Number.isFinite(wh)) return null;
+  const sample: Sample = { ts, wh, w: Number.isFinite(w) ? w : 0 };
+  if (rest.length === 3 && rest.every(Number.isFinite)) sample.phases = rest;
+  return sample;
 }
 
 const round = (v: number, d: number) => Math.round(v * 10 ** d) / 10 ** d;

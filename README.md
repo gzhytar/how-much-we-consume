@@ -1,6 +1,11 @@
 # Kolik spotřebujeme
 
-A TV dashboard that shows what the household's electricity costs: the **past hour** and the **past 24 hours** in CZK, the current power, VT/NT tariff and when it changes, and an hourly chart. A tile turns amber or red when the cost crosses a fixed CZK limit or is well above usual for that time of day.
+A TV dashboard whose job is to make the family **notice a rising cost and act right away**.
+
+- **Right now** (the headline): what electricity costs at this moment in **Kč per hour**, averaged over 5 minutes so a kettle doesn't set it off. It's compared with the hourly limit and with what's usual at this time. Next to it, "Co teď běží" shows live power on each of the meter's three phases, which helps find what's running (name them with `PHASE_NAMES`).
+- **Past hour** and **past 24 hours** in Kč, each against its limit and the usual level.
+- **Hourly chart:** past hours in grey; amber when well above usual, red when over the hourly limit, blue for the current hour. The faint wide bar behind each hour is the usual cost. To the right of "teď" the coming hours show when the cheap tariff (NT) starts.
+- A tile turns amber or red, and a banner says what to do. When data is out of date the numbers are dimmed and the banner says so.
 
 ```
 Upstash QStash (every 3 min) ─► /api/collect ─► Shelly Cloud API ─► Upstash Redis
@@ -55,6 +60,7 @@ Google TV (Fully Kiosk) ─► /?t=TOKEN ─► /api/summary (every 60 s)
 ```bash
 npm install
 npm run dev:demo      # synthetic 15-day household at http://localhost:3000
+DEMO=1 DEMO_EXTRA_W=3500 npx next dev   # same, with an extra 3.5 kW for the last 15 min (alert state)
 npm test              # unit tests: tariff, DST, counter deltas, thresholds, HDO matching, Shelly parsing, QStash signatures
 cp .env.example .env.local && npm run dev   # with your real meter (data kept in memory without Redis)
 ```

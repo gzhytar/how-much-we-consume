@@ -7,7 +7,10 @@
   --muted: #898781;
   --grid: #2c2c2a;
   --axis: #383835;
-  --series: #3987e5;
+  --accent: #3987e5; /* this hour, per-phase bars */
+  --bar: #6f6e69; /* past hours: de-emphasized, so problem hours and "now" stand out */
+  --ghost: rgba(240, 239, 236, 0.1); /* "usual" behind each bar */
+  --nt-band: rgba(240, 239, 236, 0.06);
   --good: #0ca30c;
   --warning: #fab219;
   --critical: #d03b3b;
@@ -31,6 +34,7 @@ body {
 
 h1,
 h2,
+h3,
 p {
   margin: 0;
 }
@@ -39,9 +43,9 @@ p {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  gap: 1.2vw;
+  gap: 1.1vw;
   /* TV overscan: keep everything clear of the edges. */
-  padding: 2.2vw 3vw;
+  padding: 2vw 3vw;
   font-size: 1.15vw;
   transition: transform 2s ease;
 }
@@ -55,6 +59,8 @@ p {
   color: var(--ink-2);
 }
 
+/* ---------- header ---------- */
+
 .top {
   display: flex;
   justify-content: space-between;
@@ -63,7 +69,7 @@ p {
 }
 
 .top h1 {
-  font-size: 1.9vw;
+  font-size: 1.7vw;
   font-weight: 600;
 }
 
@@ -82,8 +88,7 @@ p {
   background: var(--surface);
 }
 
-.tariff-NT::before,
-.tariff-VT::before {
+.tariff::before {
   content: "";
   display: inline-block;
   width: 0.7vw;
@@ -106,70 +111,139 @@ p {
 }
 
 .clock {
-  font-size: 2.2vw;
+  font-size: 2.1vw;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
+/* ---------- tiles ---------- */
+
 .tiles {
   display: grid;
-  grid-template-columns: 1fr 1fr 0.75fr;
-  gap: 1.4vw;
+  grid-template-columns: 1.45fr 1fr;
+  gap: 1.3vw;
+  transition: opacity 0.6s ease;
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1vw;
 }
 
 .tile {
   background: var(--surface);
   border-radius: 1vw;
-  padding: 1.4vw 1.6vw;
+  padding: 1.2vw 1.5vw;
   box-shadow: inset 0 0 0 1px var(--ring);
   display: flex;
   flex-direction: column;
-  gap: 0.6vw;
-  position: relative;
+  gap: 0.5vw;
 }
 
-.tile.period.level-warn {
+.tile.level-warn {
   box-shadow: inset 0 0 0 0.25vw var(--warning);
 }
 
-.tile.period.level-alert {
+.tile.level-alert {
   box-shadow: inset 0 0 0 0.25vw var(--critical);
 }
 
+.tile-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1vw;
+}
+
 .tile h2 {
-  font-size: 1.5vw;
+  font-size: 1.4vw;
   font-weight: 500;
   color: var(--ink-2);
 }
 
-.big {
-  font-size: 6vw;
-  font-weight: 700;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-}
-
 .unit {
-  font-size: 2.4vw;
+  font-size: 0.32em;
   font-weight: 500;
   color: var(--ink-2);
   letter-spacing: 0;
 }
 
-.sub {
-  font-size: 1.25vw;
-  color: var(--ink-2);
-  font-variant-numeric: tabular-nums;
+/* The one hero figure: proportional digits read tighter at display sizes. */
+.hero {
+  font-size: 9vw;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
 }
 
+.period-value {
+  font-size: 3.6vw;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0 0.4vw;
+}
+
+.period-value .unit {
+  font-size: 0.45em;
+}
+
+.sub {
+  font-size: 1.2vw;
+  color: var(--ink-2);
+}
+
+.sub.inline {
+  font-size: 1.15vw;
+  font-weight: 400;
+  letter-spacing: 0;
+  margin-left: 0.6vw;
+}
+
+.sub.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3vw 1.2vw;
+}
+
+.live-body {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 2vw;
+  align-items: center;
+  flex: 1;
+}
+
+.live-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6vw;
+}
+
+/* Meter: the track is a lighter step of the fill's own hue. */
 .meter {
   position: relative;
   height: 0.6vw;
   border-radius: 999px;
-  background: var(--grid);
   overflow: hidden;
-  margin-top: 0.3vw;
+  margin-top: 0.2vw;
+}
+
+.meter.level-ok {
+  background: rgba(12, 163, 12, 0.22);
+}
+
+.meter.level-warn {
+  background: rgba(250, 178, 25, 0.22);
+}
+
+.meter.level-alert {
+  background: rgba(208, 59, 59, 0.28);
 }
 
 .meter-fill {
@@ -178,15 +252,15 @@ p {
   transition: width 1s ease;
 }
 
-.meter-fill.level-ok {
+.meter.level-ok .meter-fill {
   background: var(--good);
 }
 
-.meter-fill.level-warn {
+.meter.level-warn .meter-fill {
   background: var(--warning);
 }
 
-.meter-fill.level-alert {
+.meter.level-alert .meter-fill {
   background: var(--critical);
 }
 
@@ -195,20 +269,19 @@ p {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: var(--page);
+  background: var(--surface);
 }
 
-.pill {
-  position: absolute;
-  top: 1.3vw;
-  right: 1.4vw;
+.pill,
+.delta {
   display: inline-flex;
   align-items: center;
   gap: 0.5vw;
-  padding: 0.35vw 0.9vw;
+  padding: 0.3vw 0.9vw;
   border-radius: 999px;
-  font-size: 1.2vw;
+  font-size: 1.15vw;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .pill-icon {
@@ -220,23 +293,85 @@ p {
   color: #fff;
 }
 
-.pill.level-warn {
+.pill.level-warn,
+.delta.level-warn {
   background: var(--warning);
   color: #0b0b0b;
 }
 
-.pill.level-alert {
+.pill.level-alert,
+.delta.level-alert {
   background: var(--critical);
   color: #fff;
 }
 
+.delta {
+  font-size: 1.1vw;
+  padding: 0.2vw 0.7vw;
+}
+
+.delta-quiet {
+  color: var(--ink-2);
+}
+
+/* Per-phase power: one hue, aligned rows, value at the end. */
+.phases {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7vw;
+  padding-top: 0.4vw;
+}
+
+.phases h3 {
+  font-size: 1.15vw;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.phase {
+  display: grid;
+  grid-template-columns: minmax(4vw, auto) 1fr auto;
+  align-items: center;
+  gap: 0.8vw;
+  font-size: 1.25vw;
+}
+
+.phase-name {
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.phase-track {
+  height: 0.9vw;
+  border-radius: 999px;
+  background: rgba(57, 135, 229, 0.18);
+  overflow: hidden;
+}
+
+.phase-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 1s ease;
+}
+
+.phase-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 5vw;
+}
+
+/* ---------- banner ---------- */
+
 .tip {
   font-size: 1.7vw;
   font-weight: 600;
-  padding: 1vw 1.6vw;
+  padding: 0.9vw 1.6vw;
   border-radius: 1vw;
   background: var(--surface);
-  border-left: 0.5vw solid var(--series);
+  border-left: 0.5vw solid var(--accent);
 }
 
 .tip-warn {
@@ -247,19 +382,28 @@ p {
   border-left-color: var(--critical);
 }
 
+/* Stale data: dim the numbers so nobody acts on them; the banner says why. */
+.is-stale .tiles,
+.is-stale .chart-wrap {
+  opacity: 0.4;
+}
+
+/* ---------- chart ---------- */
+
 .chart-wrap {
   flex: 1;
+  min-height: 0;
   background: var(--surface);
   border-radius: 1vw;
-  padding: 1.1vw 1.6vw 0.6vw;
+  padding: 1vw 1.6vw 0.5vw;
   box-shadow: inset 0 0 0 1px var(--ring);
-  min-height: 0;
   display: flex;
   flex-direction: column;
+  transition: opacity 0.6s ease;
 }
 
 .chart-head {
-  margin-bottom: 0.6vw;
+  margin-bottom: 0.4vw;
   display: flex;
   justify-content: space-between;
   align-items: baseline;
@@ -267,43 +411,48 @@ p {
 }
 
 .chart-head h2 {
-  font-size: 1.4vw;
+  font-size: 1.3vw;
   font-weight: 500;
   color: var(--ink-2);
 }
 
 .legend {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
-  gap: 0.5vw;
+  gap: 0.4vw;
   color: var(--ink-2);
-  font-size: 1.1vw;
+  font-size: 1.05vw;
 }
 
 .lg {
   display: inline-block;
-  width: 1.2vw;
+  width: 1.1vw;
   height: 0.8vw;
-  margin-left: 1vw;
+  margin-left: 0.9vw;
   border-radius: 2px;
 }
 
 .lg-bar {
-  background: var(--series);
+  background: var(--bar);
 }
 
-.lg-nt {
-  background: rgba(12, 163, 12, 0.22);
-}
-
-.lg-limit {
-  height: 0;
-  border-top: 2px dashed var(--critical);
+.lg-now {
+  background: var(--accent);
 }
 
 .lg-usual {
-  height: 0;
-  border-top: 3px solid var(--ink);
+  background: var(--ghost);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.lg-warn {
+  background: var(--warning);
+}
+
+.lg-alert {
+  background: var(--critical);
 }
 
 .chart-box {
@@ -320,7 +469,14 @@ p {
 }
 
 .chart .nt-band {
-  fill: rgba(12, 163, 12, 0.14);
+  fill: var(--nt-band);
+}
+
+.chart .nt-label {
+  fill: var(--ink-2);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
 .chart .grid {
@@ -333,20 +489,29 @@ p {
   stroke-width: 2;
 }
 
+.chart .divider {
+  stroke: var(--muted);
+  stroke-width: 2;
+}
+
+.chart .ghost {
+  fill: var(--ghost);
+}
+
 .chart .bar {
-  fill: var(--series);
+  fill: var(--bar);
 }
 
-.chart .bar.partial {
-  fill: var(--series);
-  opacity: 0.55;
+.chart .bar-now {
+  fill: var(--accent);
 }
 
-.chart .usual {
-  stroke: var(--ink);
-  stroke-width: 3;
-  stroke-linecap: round;
-  opacity: 0.85;
+.chart .bar-warn {
+  fill: var(--warning);
+}
+
+.chart .bar-alert {
+  fill: var(--critical);
 }
 
 .chart .limit {
@@ -357,7 +522,13 @@ p {
 
 .chart .axis {
   fill: var(--muted);
-  font-size: 20px;
+  font-size: 21px;
+}
+
+.chart .axis-now {
+  fill: var(--ink);
+  font-size: 23px;
+  font-weight: 700;
 }
 
 .chart .peak {
@@ -365,6 +536,8 @@ p {
   font-size: 22px;
   font-weight: 600;
 }
+
+/* ---------- footer ---------- */
 
 .foot {
   display: flex;
@@ -374,7 +547,6 @@ p {
   color: var(--muted);
 }
 
-.stale,
 .warn-text {
   color: var(--warning);
 }
