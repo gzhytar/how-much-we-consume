@@ -43,6 +43,12 @@ export function describeFetchError(e: unknown): string {
 }
 
 export function baseUrl(server: string): string {
+  if (/:6022|\/jrpc|shelly-api-/i.test(server)) {
+    throw new ShellyError(
+      `SHELLY_SERVER "${server}" je adresa, přes kterou se k cloudu připojuje samotný měřák, ne Cloud API. ` +
+        "Správnou adresu (např. shelly-103-eu.shelly.cloud) najdete v aplikaci Shelly: Nastavení uživatele → Autorizační klíč cloudu.",
+    );
+  }
   const host = server
     .trim()
     .replace(/^["']|["']$/g, "")

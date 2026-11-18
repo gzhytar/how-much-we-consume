@@ -282,6 +282,7 @@ describe("Shelly server and network errors", () => {
     expect(baseUrl('"https://shelly-103-eu.shelly.cloud/device/status"')).toBe("https://shelly-103-eu.shelly.cloud");
     expect(() => baseUrl("shelly-XX-eu.shelly.cloud")).toThrow(/SHELLY_SERVER/);
     expect(() => baseUrl("my shelly")).toThrow(/SHELLY_SERVER/);
+    expect(() => baseUrl("shelly-api-eu.shelly.cloud:6022/jrpc")).toThrow(/samotný měřák/);
   });
   it("explains fetch failed", async () => {
     const { describeFetchError } = await import("@/lib/shelly");
