@@ -239,8 +239,8 @@ export function buildSummary(input: SummaryInput): Summary {
   if (live && live.limitLevel === "alert") {
     const top = live.phases ? [...live.phases].sort((a, b) => b.czkPerHour - a.czkPerHour)[0] : null;
     tips.push(
-      `Právě teď to stojí ${fmtCzk(live.czkPerHour)} za hodinu – nad limitem ${fmtCzk(live.limitCzkPerHour)} za hodinu.` +
-        (top && top.w > 300 ? ` Nejvíc stojí ${top.name} (${top.czkShown} Kč za hodinu).` : "") +
+      `Právě teď ${fmtCzk(live.czkPerHour)}/h, nad limitem ${fmtCzk(live.limitCzkPerHour)}/h.` +
+        (top && top.w > 300 ? ` Nejvíc ${top.name} (${top.czkShown} Kč/h).` : "") +
         " Co můžete vypnout?",
     );
   } else if (live && live.usualLevel && live.usualLevel !== "ok" && live.vsUsualPct !== null) {
@@ -346,7 +346,9 @@ function attribute(sorted: Sample[], from: number, schedule: WeeklySchedule, pri
     let source: "energy" | "power" | "none" = "none";
     if (a.phaseWh?.length === 3 && b.phaseWh?.length === 3) {
       const d = [0, 1, 2].map((p) => Math.max(0, b.phaseWh![p] - a.phaseWh![p]));
-      shares = normalize(d);
+      // Two readings close together often carry the same cached counters: nothing to split, and
+      // still exact, so it mustn't count as an estimate.
+      shares = dWh === 0 ? [0, 0, 0] : normalize(d);
       if (shares) source = "energy";
     }
     if (!shares && a.phases?.length === 3 && b.phases?.length === 3) {

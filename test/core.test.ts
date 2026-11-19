@@ -417,6 +417,18 @@ describe("live rate and chart levels", () => {
     expect(parts.reduce((a, p) => a + p.czkShown, 0)).toBe(Math.ceil(s.day.czk - 1e-9));
   });
 
+  it("treats readings with unchanged counters as exact, not an estimate", () => {
+    // Readings every 30 s, counters advancing only every minute (cached by Shelly Cloud).
+    const samples: Sample[] = [];
+    let e = [0, 0, 0];
+    for (let t = now - 2 * HOUR; t <= now; t += 30_000) {
+      samples.push({ ts: t, wh: e[0] + e[1] + e[2], w: 900, phases: [300, 300, 300], phaseWh: e });
+      if ((t / 30_000) % 2 === 1) e = e.map((x) => x + (300 * MINUTE) / HOUR);
+    }
+    const s = buildSummary({ samples, schedule: parseFallback(""), scheduleSource: "t", prices, limits: { hourCzk: 20, dayCzk: 1000 }, now });
+    expect(s.live?.phaseSplit).toBe("energy");
+  });
+
   it("apportions whole numbers that sum to the total", async () => {
     const { apportion } = await import("@/lib/summary");
     expect(apportion([1.1, 2.2, 0.1], 13)).toEqual([4, 9, 0]);
@@ -454,7 +466,7 @@ describe("live rate and chart levels", () => {
       ["Bojler", 0, 0],
     ]);
     expect(s.live?.phases?.[0].czkPerHour).toBeCloseTo(24, 6);
-    expect(s.tips[0]).toMatch(/Právě teď.*Nejvíc stojí Kuchyň \(24 Kč za hodinu\)/);
+    expect(s.tips[0]).toMatch(/Právě teď.*Nejvíc Kuchyň \(24 Kč\/h\)/);
     expect(s.timeline.stretches[0].from).toBe(now);
   });
 

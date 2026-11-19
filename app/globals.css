@@ -1,4 +1,4 @@
-/* TV dashboard: dark only, sized in vw so it scales from the TV's 960×540 CSS viewport up to 1920×1080. */
+/* TV dashboard: dark only, sized in --u so it scales from the TV's 960×540 CSS viewport up to any screen. */
 :root {
   --page: #0d0d0d;
   --surface: #1a1a19;
@@ -21,6 +21,9 @@
   --c3: #199e70;
   --c0: #6f6e69; /* "Nerozlišeno": energy no reading could attribute */
   color-scheme: dark;
+  /* Size unit: 1 % of the width on a 16:9 screen, smaller when the screen is relatively shorter
+     (wider than 16:9, browser bars), so the layout always fits the height. */
+  --u: min(1vw, 1.7778vh);
 }
 
 * {
@@ -48,10 +51,10 @@ p {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  gap: 0.9vw;
+  gap: calc(0.9 * var(--u));
   /* TV overscan: keep everything clear of the edges. */
-  padding: 1.8vw 3vw;
-  font-size: 1.15vw;
+  padding: calc(1.8 * var(--u)) calc(3 * var(--u));
+  font-size: calc(1.15 * var(--u));
   transition: transform 2s ease;
 }
 
@@ -60,7 +63,7 @@ p {
   display: grid;
   place-items: center;
   height: 100vh;
-  font-size: 2vw;
+  font-size: calc(2 * var(--u));
   color: var(--ink-2);
 }
 
@@ -70,23 +73,23 @@ p {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 2vw;
+  gap: calc(2 * var(--u));
 }
 
 .top h1 {
-  font-size: 1.7vw;
+  font-size: calc(1.7 * var(--u));
   font-weight: 600;
 }
 
 .top-right {
   display: flex;
   align-items: baseline;
-  gap: 1.4vw;
-  font-size: 1.4vw;
+  gap: calc(1.4 * var(--u));
+  font-size: calc(1.4 * var(--u));
 }
 
 .tariff {
-  padding: 0.3vw 0.9vw;
+  padding: calc(0.3 * var(--u)) calc(0.9 * var(--u));
   border-radius: 999px;
   font-weight: 600;
   box-shadow: inset 0 0 0 1px var(--ring);
@@ -96,11 +99,11 @@ p {
 .tariff::before {
   content: "";
   display: inline-block;
-  width: 0.7vw;
-  height: 0.7vw;
+  width: calc(0.7 * var(--u));
+  height: calc(0.7 * var(--u));
   border-radius: 50%;
-  margin-right: 0.6vw;
-  vertical-align: 0.1vw;
+  margin-right: calc(0.6 * var(--u));
+  vertical-align: calc(0.1 * var(--u));
 }
 
 .tariff-NT::before {
@@ -112,7 +115,7 @@ p {
 }
 
 .clock {
-  font-size: 2.1vw;
+  font-size: calc(2.1 * var(--u));
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -122,9 +125,10 @@ p {
 .tiles {
   flex: 1;
   min-height: 0;
+  overflow: hidden;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1.3vw;
+  gap: calc(1.3 * var(--u));
   transition: opacity 0.6s ease;
 }
 
@@ -133,32 +137,34 @@ p {
 }
 
 .tile {
+  min-height: 0;
+  overflow: hidden;
   background: var(--surface);
-  border-radius: 1vw;
-  padding: 1vw 1.4vw;
+  border-radius: calc(1 * var(--u));
+  padding: calc(1 * var(--u)) calc(1.4 * var(--u));
   box-shadow: inset 0 0 0 1px var(--ring);
   display: flex;
   flex-direction: column;
-  gap: 0.4vw;
+  gap: calc(0.4 * var(--u));
 }
 
 .tile.level-warn {
-  box-shadow: inset 0 0 0 0.25vw var(--warning);
+  box-shadow: inset 0 0 0 calc(0.25 * var(--u)) var(--warning);
 }
 
 .tile.level-alert {
-  box-shadow: inset 0 0 0 0.25vw var(--critical);
+  box-shadow: inset 0 0 0 calc(0.25 * var(--u)) var(--critical);
 }
 
 .tile-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 1vw;
+  gap: calc(1 * var(--u));
 }
 
 .tile h2 {
-  font-size: 1.4vw;
+  font-size: calc(1.4 * var(--u));
   font-weight: 500;
   color: var(--ink-2);
 }
@@ -172,7 +178,7 @@ p {
 
 /* The one hero figure: proportional digits read tighter at display sizes. */
 .hero {
-  font-size: 5vw;
+  font-size: calc(5 * var(--u));
   white-space: nowrap;
   font-weight: 700;
   line-height: 1;
@@ -184,42 +190,42 @@ p {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: center;
-  gap: 1.6vw;
+  gap: calc(1.6 * var(--u));
 }
 
 .figure-side {
   display: flex;
   flex-direction: column;
-  gap: 0.45vw;
+  gap: calc(0.45 * var(--u));
   min-width: 0;
 }
 
 .sub {
-  font-size: 1.2vw;
+  font-size: calc(1.2 * var(--u));
   color: var(--ink-2);
 }
 
 .sub.inline {
-  font-size: 1.15vw;
+  font-size: calc(1.15 * var(--u));
   font-weight: 400;
   letter-spacing: 0;
-  margin-left: 0.6vw;
+  margin-left: calc(0.6 * var(--u));
 }
 
 .sub.row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.3vw 1.2vw;
+  gap: calc(0.3 * var(--u)) calc(1.2 * var(--u));
 }
 
 /* Meter: the track is a lighter step of the fill's own hue. */
 .meter {
   position: relative;
-  height: 0.6vw;
+  height: calc(0.6 * var(--u));
   border-radius: 999px;
   overflow: hidden;
-  margin-top: 0.2vw;
+  margin-top: calc(0.2 * var(--u));
 }
 
 .meter.level-ok {
@@ -264,10 +270,10 @@ p {
 .delta {
   display: inline-flex;
   align-items: center;
-  gap: 0.5vw;
-  padding: 0.3vw 0.9vw;
+  gap: calc(0.5 * var(--u));
+  padding: calc(0.3 * var(--u)) calc(0.9 * var(--u));
   border-radius: 999px;
-  font-size: 1.15vw;
+  font-size: calc(1.15 * var(--u));
   font-weight: 600;
   white-space: nowrap;
 }
@@ -294,8 +300,8 @@ p {
 }
 
 .delta {
-  font-size: 1.1vw;
-  padding: 0.2vw 0.7vw;
+  font-size: calc(1.1 * var(--u));
+  padding: calc(0.2 * var(--u)) calc(0.7 * var(--u));
 }
 
 .delta-quiet {
@@ -307,8 +313,8 @@ p {
 .split {
   display: flex;
   flex-direction: column;
-  gap: 0.55vw;
-  margin-top: 0.6vw;
+  gap: calc(0.55 * var(--u));
+  margin-top: calc(0.6 * var(--u));
 }
 
 .split-head,
@@ -316,33 +322,33 @@ p {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  gap: 1vw;
+  gap: calc(1 * var(--u));
 }
 
 .split h3,
 .hours h3 {
-  font-size: 1.35vw;
+  font-size: calc(1.35 * var(--u));
   font-weight: 600;
   color: var(--ink);
 }
 
 .split-unit {
-  font-size: 1.05vw;
+  font-size: calc(1.05 * var(--u));
   color: var(--muted);
   text-align: right;
 }
 
 .split-row {
   display: grid;
-  grid-template-columns: 1.1vw minmax(7vw, auto) 1fr 8.5vw;
+  grid-template-columns: calc(1.1 * var(--u)) calc(13 * var(--u)) 1fr calc(8.5 * var(--u)); /* fixed name column: bars align */
   align-items: center;
-  gap: 0.9vw;
-  font-size: 1.5vw;
+  gap: calc(0.9 * var(--u));
+  font-size: calc(1.5 * var(--u));
 }
 
 .swatch {
-  width: 1.1vw;
-  height: 1.1vw;
+  width: calc(1.1 * var(--u));
+  height: calc(1.1 * var(--u));
   border-radius: 3px;
 }
 
@@ -359,7 +365,7 @@ p {
 }
 
 .split-track {
-  height: 1.1vw;
+  height: calc(1.1 * var(--u));
   border-radius: 4px;
   background: var(--grid);
   overflow: hidden;
@@ -373,23 +379,23 @@ p {
 }
 
 .split-value {
-  font-size: 2.1vw;
+  font-size: calc(2.1 * var(--u));
   font-weight: 700;
   line-height: 1;
   text-align: right;
   display: flex;
   align-items: baseline;
   justify-content: flex-end;
-  gap: 0.5vw;
+  gap: calc(0.5 * var(--u));
 }
 
 .split-detail {
-  font-size: 1vw;
+  font-size: calc(1 * var(--u));
   font-weight: 400;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  min-width: 3.6vw;
+  min-width: calc(3.6 * var(--u));
 }
 
 .c1 {
@@ -410,32 +416,33 @@ p {
 
 /* "Co teď běží" is the screen's main read: bigger rows, using the tile's spare height. */
 .split-big {
-  flex: 1;
-  justify-content: center;
-  gap: 1vw;
+  flex: 1 1 auto;
+  min-height: 0;
+  justify-content: space-evenly;
+  gap: calc(0.5 * var(--u));
 }
 
 .split-big .split-row {
-  grid-template-columns: 1.4vw minmax(8vw, auto) 1fr 10vw;
-  font-size: 2vw;
+  grid-template-columns: calc(1.4 * var(--u)) calc(17 * var(--u)) 1fr calc(10 * var(--u));
+  font-size: calc(2 * var(--u));
 }
 
 .split-big .swatch {
-  width: 1.4vw;
-  height: 1.4vw;
+  width: calc(1.4 * var(--u));
+  height: calc(1.4 * var(--u));
 }
 
 .split-big .split-track {
-  height: 1.5vw;
+  height: calc(1.5 * var(--u));
 }
 
 .split-big .split-value {
-  font-size: 3vw;
+  font-size: calc(2.7 * var(--u));
 }
 
 .split-big .split-detail {
-  font-size: 1.15vw;
-  min-width: 4.4vw;
+  font-size: calc(1.15 * var(--u));
+  min-width: calc(4.4 * var(--u));
 }
 
 /* "Poslední hodina": the hourly limit check, compact under the live split. */
@@ -444,10 +451,10 @@ p {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4vw 0.8vw;
-  font-size: 1.2vw;
+  gap: calc(0.4 * var(--u)) calc(0.8 * var(--u));
+  font-size: calc(1.2 * var(--u));
   color: var(--ink-2);
-  padding-top: 0.6vw;
+  padding-top: calc(0.6 * var(--u));
   border-top: 1px solid var(--grid);
 }
 
@@ -456,25 +463,28 @@ p {
 }
 
 .hourline .pill {
-  font-size: 1vw;
-  padding: 0.15vw 0.7vw;
+  font-size: calc(1 * var(--u));
+  padding: calc(0.15 * var(--u)) calc(0.7 * var(--u));
 }
 
 /* ---------- 24 h by hour, stacked by circuit ---------- */
 
 .hours {
-  margin-top: auto;
+  flex: 1 1 0;
+  min-height: calc(6 * var(--u));
+  margin-top: calc(0.6 * var(--u));
   display: flex;
   flex-direction: column;
-  gap: 0.4vw;
+  gap: calc(0.4 * var(--u));
 }
 
 .hours-plot {
   position: relative;
-  height: 6vw;
+  flex: 1 1 0;
+  min-height: calc(2.5 * var(--u));
   display: flex;
   align-items: flex-end;
-  gap: 0.25vw;
+  gap: calc(0.25 * var(--u));
   border-bottom: 1px solid var(--axis);
 }
 
@@ -501,7 +511,7 @@ p {
 
 .dash {
   display: inline-block;
-  width: 1.6vw;
+  width: calc(1.6 * var(--u));
   vertical-align: middle;
   border-top: 2px dashed var(--ink-2);
 }
@@ -509,12 +519,12 @@ p {
 /* ---------- banner ---------- */
 
 .tip {
-  font-size: 1.6vw;
+  font-size: calc(1.6 * var(--u));
   font-weight: 600;
-  padding: 0.7vw 1.6vw;
-  border-radius: 1vw;
+  padding: calc(0.7 * var(--u)) calc(1.6 * var(--u));
+  border-radius: calc(1 * var(--u));
   background: var(--surface);
-  border-left: 0.5vw solid var(--accent);
+  border-left: calc(0.5 * var(--u)) solid var(--accent);
 }
 
 .tip-warn {
@@ -541,22 +551,22 @@ p {
 
 .timeline {
   background: var(--surface);
-  border-radius: 1vw;
-  padding: 0.8vw 1.6vw 0.9vw;
+  border-radius: calc(1 * var(--u));
+  padding: calc(0.8 * var(--u)) calc(1.6 * var(--u)) calc(0.9 * var(--u));
   box-shadow: inset 0 0 0 1px var(--ring);
   display: flex;
   flex-direction: column;
-  gap: 0.4vw;
+  gap: calc(0.4 * var(--u));
 }
 
 .timeline-head {
   display: flex;
   align-items: baseline;
-  gap: 1vw;
+  gap: calc(1 * var(--u));
 }
 
 .timeline-head h2 {
-  font-size: 1.45vw;
+  font-size: calc(1.45 * var(--u));
   font-weight: 600;
   color: var(--ink);
 }
@@ -564,7 +574,7 @@ p {
 .tl-strip {
   display: flex;
   gap: 2px; /* surface gap between stretches */
-  height: 2.7vw;
+  height: calc(2.7 * var(--u));
 }
 
 .tl-block {
@@ -586,16 +596,16 @@ p {
 }
 
 .tl-label {
-  padding: 0 0.9vw;
-  font-size: 1.3vw;
+  padding: 0 calc(0.9 * var(--u));
+  font-size: calc(1.3 * var(--u));
   font-weight: 600;
   white-space: nowrap;
 }
 
 .tl-times {
   position: relative;
-  height: 1.8vw;
-  font-size: 1.2vw;
+  height: calc(1.8 * var(--u));
+  font-size: calc(1.2 * var(--u));
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
 }
@@ -623,10 +633,10 @@ p {
 .trend-axis {
   display: flex;
   justify-content: space-between;
-  gap: 1vw;
-  font-size: 1vw;
+  gap: calc(1 * var(--u));
+  font-size: calc(1 * var(--u));
   color: var(--muted);
-  margin-top: 0.2vw;
+  margin-top: calc(0.2 * var(--u));
 }
 
 /* ---------- footer ---------- */
@@ -634,8 +644,8 @@ p {
 .foot {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4vw 2vw;
-  font-size: 1vw;
+  gap: calc(0.4 * var(--u)) calc(2 * var(--u));
+  font-size: calc(1 * var(--u));
   color: var(--muted);
 }
 
