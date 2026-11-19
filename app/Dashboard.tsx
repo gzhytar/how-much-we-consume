@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Bar, LiveSummary, PeriodSummary, PhasePower, Summary } from "@/lib/summary";
+import type { Bar, DayPart, LiveSummary, PeriodSummary, SplitSource, Summary } from "@/lib/summary";
 import type { Prices, TariffStretch } from "@/lib/tariff";
 import type { Level } from "@/lib/thresholds";
 
@@ -102,13 +102,15 @@ export default function Dashboard({ token }: { token: string }) {
       </header>
 
       <section className="tiles">
-        <LiveTile live={data.live} limit={data.hour.limitCzk} />
-        <div className="side">
-          <PeriodTile title="Poslední hodina" p={data.hour} stale={stale} />
-          <PeriodTile title="Posledních 24 hodin" p={data.day} stale={stale}>
-            <Trend bars={data.bars} />
-          </PeriodTile>
-        </div>
+        <NowTile live={data.live} hour={data.hour} stale={stale} />
+        <DayTile
+          day={data.day}
+          parts={data.dayParts}
+          split={data.daySplit}
+          bars={data.bars}
+          hourLimit={data.hour.limitCzk}
+          stale={stale}
+        />
       </section>
 
       {banner && (
@@ -176,23 +178,30 @@ function VsUsual({ pct, level }: { pct: number | null; level: Level | null }) {
   );
 }
 
-function LiveTile({ live, limit }: { live: LiveSummary | null; limit: number }) {
+/** Colour class per part index: circuits L1–L3 in fixed order, then "Nerozlišeno" in neutral grey. */
+const partClass = (i: number) => (i < 3 ? `c${i + 1}` : "c0");
+
+/** Unit label for a split, marked "odhad" when any of it comes from live power instead of energy counters. */
+const splitUnit = (unit: string, source: SplitSource | null) => (source && source !== "energy" ? `${unit} · odhad` : unit);
+
+function NowTile({ live, hour, stale }: { live: LiveSummary | null; hour: PeriodSummary; stale: boolean }) {
+  // The tile's status is about the rate now; the last hour's state is its own chip on the hour line,
+  // so a calm "2 Kč/h" never sits under a red pill.
   const level = live?.level ?? "ok";
+  const limit = hour.limitCzk;
   return (
-    <div className={`tile live level-${level}`}>
+    <div className={`tile level-${level}`}>
       <div className="tile-head">
         <h2>Právě teď</h2>
         {live && <StatusPill level={level} />}
       </div>
-      <div className="live-body">
-        <div className="live-main">
-          <div className="hero">
-            {live ? czk(live.czkPerHour) : "–"}
-            <span className="unit"> Kč/h</span>
-          </div>
-          <p className="sub">
-            {live ? `${kw(live.kw * 1000)} kW · průměr za ${live.windowMinutes} min` : "bez aktuálních dat"}
-          </p>
+      <div className="figure">
+        <div className="hero">
+          {live ? czk(live.czkPerHour) : "–"}
+          <span className="unit"> Kč/h</span>
+        </div>
+        <div className="figure-side">
+          <p className="sub">{live ? `${kw(live.kw * 1000)} kW · průměr za ${live.windowMinutes} min` : "bez aktuálních dat"}</p>
           {live && <Meter value={live.czkPerHour} limit={limit} level={live.limitLevel} />}
           <p className="sub row">
             <span>limit {czk(limit)} Kč/h</span>
@@ -200,113 +209,192 @@ function LiveTile({ live, limit }: { live: LiveSummary | null; limit: number }) 
             {live && <VsUsual pct={live.vsUsualPct} level={live.usualLevel} />}
           </p>
         </div>
-        {live?.phases && <PhaseCosts phases={live.phases} limit={limit} />}
+      </div>
+      {live?.phases && (
+        <Split
+          big
+          title="Co teď běží"
+          unit={splitUnit("Kč za hodinu", live.phaseSplit)}
+          rows={live.phases.map((p, i) => ({
+            name: p.name,
+            cls: partClass(i),
+            value: shownCzk(p.czkShown, p.czkPerHour),
+            detail: `${tenth(p.kwShown)} kW`,
+            ratio: p.czkPerHour / Math.max(limit, live.czkPerHour, 1),
+            exact: p.czkPerHour,
+          }))}
+        />
+      )}
+      <div className="hourline">
+        <span>Poslední hodina</span>
+        <strong>{czk(hour.czk)} Kč</strong>
+        <span>z limitu {czk(hour.limitCzk)} Kč</span>
+        {!stale && <VsUsual pct={hour.vsUsualPct} level={hour.usualLevel} />}
+        {!stale && hour.limitLevel === "alert" && <StatusPill level="alert" />}
       </div>
     </div>
   );
 }
 
-/**
- * "Co teď běží": each circuit's part of the headline Kč/h, over the same window, so the rows add up
- * to it. Bars share the hourly limit's scale,
- * so a bar's length means the same as the main meter; the costliest circuit is highlighted.
- */
-function PhaseCosts({ phases, limit }: { phases: PhasePower[]; limit: number }) {
-  const scale = Math.max(limit, ...phases.map((p) => p.czkPerHour), 1);
-  const top = phases.reduce((a, b) => (b.czkPerHour > a.czkPerHour ? b : a), phases[0]);
-  const label = phases.map((p) => `${p.name} ${phaseCzk(p)} Kč za hodinu`).join(", ");
-  return (
-    <div className="phases" role="group" aria-label={`Co teď běží: ${label}`}>
-      <div className="phases-head">
-        <h3>Co teď běží</h3>
-        <span className="phases-unit">Kč za hodinu</span>
-      </div>
-      {phases.map((p) => {
-        const isTop = p === top && p.czkShown >= 1;
-        return (
-          <div className={`phase${isTop ? " is-top" : ""}`} key={p.name}>
-            <span className="phase-name">{p.name}</span>
-            <span className="phase-track">
-              <span className="phase-fill" style={{ width: `${Math.min(100, (p.czkPerHour / scale) * 100)}%` }} />
-            </span>
-            <span className="phase-value">
-              {phaseCzk(p)}
-              <span className="phase-kw">{p.kwShown.toLocaleString("cs-CZ", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kW</span>
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/** The phase's whole crowns (they add up to the headline); a phase that costs something but rounds to 0 reads "<1". */
-function phaseCzk(p: PhasePower): string {
-  return p.czkShown === 0 && p.czkPerHour > 0.05 ? "<1" : String(p.czkShown);
-}
-
-function PeriodTile({
-  title,
-  p,
+function DayTile({
+  day,
+  parts,
+  split,
+  bars,
+  hourLimit,
   stale,
-  children,
 }: {
-  title: string;
-  p: PeriodSummary;
+  day: PeriodSummary;
+  parts: DayPart[] | null;
+  split: SplitSource | null;
+  bars: Bar[];
+  hourLimit: number;
   stale: boolean;
-  children?: React.ReactNode;
 }) {
   // With out-of-date data a green "V pořádku" would be a false all-clear, so show no status.
   return (
-    <div className={`tile period${stale ? "" : ` level-${p.level}`}`}>
+    <div className={`tile${stale ? "" : ` level-${day.level}`}`}>
       <div className="tile-head">
-        <h2>{title}</h2>
-        {!stale && <StatusPill level={p.level} />}
+        <h2>Posledních 24 hodin</h2>
+        {!stale && <StatusPill level={day.level} />}
       </div>
-      <div className="period-value">
-        {czk(p.czk)}
-        <span className="unit"> Kč</span>
-        <span className="sub inline">
-          {kwh(p.kwh)} kWh{p.kwh > 0 ? ` · ${Math.round(p.ntShare * 100)} % v NT` : ""}
-        </span>
+      <div className="figure">
+        <div className="hero">
+          {czk(day.czk)}
+          <span className="unit"> Kč</span>
+        </div>
+        <div className="figure-side">
+          <p className="sub">
+            {kwh(day.kwh)} kWh{day.kwh > 0 ? ` · ${Math.round(day.ntShare * 100)} % v levném tarifu` : ""}
+          </p>
+          <Meter value={day.czk} limit={day.limitCzk} level={day.limitLevel} />
+          <p className="sub row">
+            <span>limit {czk(day.limitCzk)} Kč</span>
+            <VsUsual pct={day.vsUsualPct} level={day.usualLevel} />
+          </p>
+        </div>
       </div>
-      <Meter value={p.czk} limit={p.limitCzk} level={p.limitLevel} />
-      <p className="sub row">
-        <span>limit {czk(p.limitCzk)} Kč</span>
-        <VsUsual pct={p.vsUsualPct} level={p.usualLevel} />
-      </p>
-      {children}
+      {parts && (
+        <Split
+          title="Co stálo nejvíc"
+          unit={splitUnit("Kč za 24 h", split)}
+          rows={parts.map((p, i) => ({
+            name: p.name,
+            cls: partClass(i),
+            value: shownCzk(p.czkShown, p.czk),
+            detail: `${Math.round(p.share * 100)} %`,
+            ratio: p.czk / Math.max(day.limitCzk, day.czk, 1),
+            exact: p.czk,
+          }))}
+        />
+      )}
+      <HourlyStack bars={bars} parts={parts ? bars[0]?.parts?.length ?? 0 : 0} limit={hourLimit} />
     </div>
   );
 }
 
-/** 24 tiny bars, one per hour: the shape of the day, no axis. Red = hour over the hourly limit. */
-function Trend({ bars }: { bars: Bar[] }) {
-  if (bars.length === 0) return null;
-  const W = 480;
-  const H = 56;
-  const slot = W / bars.length;
-  const bw = slot * 0.62;
-  const max = Math.max(...bars.map((b) => b.czk), 0.01);
-  const anyRed = bars.some((b) => b.level === "alert");
-  const peak = bars.reduce((a, b) => (b.czk > a.czk ? b : a), bars[0]);
+interface SplitRow {
+  name: string;
+  cls: string;
+  value: string;
+  detail: string;
+  /** Bar length, 0…1, on the period's limit scale. */
+  ratio: number;
+  exact: number;
+}
+
+/**
+ * The cost split per circuit: one row each in fixed circuit order, a swatch carrying the circuit's
+ * colour (the same in both tiles and in the hourly chart), the name, a bar on the limit's scale and
+ * the value. The costliest circuit is marked by weight, not colour.
+ */
+function Split({ title, unit, rows, big }: { title: string; unit: string; rows: SplitRow[]; big?: boolean }) {
+  const top = rows.reduce((a, b) => (b.exact > a.exact ? b : a), rows[0]);
   return (
-    <div className="trend">
-      <svg
-        viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="none"
+    <div className={`split${big ? " split-big" : ""}`} role="group" aria-label={`${title}: ${rows.map((r) => `${r.name} ${r.value} ${unit}`).join(", ")}`}>
+      <div className="split-head">
+        <h3>{title}</h3>
+        <span className="split-unit">{unit}</span>
+      </div>
+      {rows.map((r) => (
+        <div className={`split-row${r === top && r.exact >= 0.5 ? " is-top" : ""}`} key={r.name}>
+          <span className={`swatch ${r.cls}`} aria-hidden />
+          <span className="split-name">{r.name}</span>
+          <span className="split-track">
+            <span className={`split-fill ${r.cls}`} style={{ width: `${Math.min(100, r.ratio * 100)}%` }} />
+          </span>
+          <span className="split-value">
+            {r.value}
+            <span className="split-detail">{r.detail}</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Whole crowns that add up to the headline; a part that costs something but rounds to 0 reads "<1". */
+function shownCzk(shown: number, exact: number): string {
+  return shown === 0 && exact > 0.05 ? "<1" : String(shown);
+}
+
+const tenth = (v: number) => v.toLocaleString("cs-CZ", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+/**
+ * Cost per hour for the last 24 hours, each column stacked by circuit in the split's colours and
+ * order. Over-limit hours are read against the dashed limit line: status colours stay out of the
+ * circuit colours.
+ */
+function HourlyStack({ bars, parts, limit }: { bars: Bar[]; parts: number; limit: number }) {
+  if (bars.length === 0) return null;
+  // Scale to the tallest hour so the circuit segments stay readable; the limit line is drawn only
+  // when it falls inside the plot, and the header says so when every hour is well below it.
+  const max = Math.max(...bars.map((b) => b.czk), 0.01) * 1.1;
+  const pct = (v: number) => (v / max) * 100;
+  const peak = bars.reduce((a, b) => (b.czk > a.czk ? b : a), bars[0]);
+  const over = bars.filter((b) => limit > 0 && b.czk >= limit).length;
+  const lineShown = limit > 0 && limit <= max;
+  const limitText =
+    limit <= 0
+      ? ""
+      : over > 0
+        ? `limit ${czk(limit)} Kč/h (${over}× překročen)`
+        : lineShown
+          ? `limit ${czk(limit)} Kč/h`
+          : `všechny hodiny pod limitem ${czk(limit)} Kč/h`;
+  const mid = bars[Math.floor(bars.length / 2)];
+  return (
+    <div className="hours">
+      <div className="hours-head">
+        <h3>Po hodinách</h3>
+        <span className="split-unit">
+          {lineShown && <span className="dash" aria-hidden />} {limitText}
+          {peak.czk > 0 && ` · nejdražší ${hourLabel(peak.start)}:00 (${czk(peak.czk)} Kč)`}
+        </span>
+      </div>
+      <div
+        className="hours-plot"
         role="img"
         aria-label={`Cena po hodinách za 24 h, nejdražší hodina ${hourLabel(peak.start)}:00 za ${czk(peak.czk)} Kč`}
       >
-        {bars.map((b, i) => {
-          const h = Math.max(2, (b.czk / max) * H);
-          const cls = b.level === "alert" ? "tr-alert" : i === bars.length - 1 ? "tr-now" : "tr-bar";
-          return <rect key={b.start} x={i * slot + (slot - bw) / 2} y={H - h} width={bw} height={h} rx={2} className={cls} />;
+        {bars.map((b) => {
+          const segs = parts && b.parts ? b.parts : [b.czk];
+          return (
+            <div className="hour" key={b.start} title={`${hourLabel(b.start)}:00 – ${czk(b.czk)} Kč`}>
+              {segs.map((v, k) =>
+                // Skip slivers: a segment under ~2 % of the plot is noise at TV distance.
+                pct(v) >= 2 ? (
+                  <div key={k} className={`seg ${parts ? partClass(k) : "c-total"}`} style={{ height: `${pct(v)}%` }} />
+                ) : null,
+              )}
+            </div>
+          );
         })}
-      </svg>
+        {lineShown && <div className="limit-line" style={{ bottom: `${pct(limit)}%` }} />}
+      </div>
       <div className="trend-axis">
         <span>{hourLabel(bars[0].start)}:00</span>
-        {anyRed && <span className="trend-note">červeně: hodiny nad limitem</span>}
+        <span>{hourLabel(mid.start)}:00</span>
         <span>teď</span>
       </div>
     </div>

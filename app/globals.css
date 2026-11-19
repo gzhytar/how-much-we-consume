@@ -14,6 +14,12 @@
   --warning: #fab219;
   --critical: #d03b3b;
   --ring: rgba(255, 255, 255, 0.1);
+  /* Circuits (phases L1–L3), categorical slots 1–3, validated all-pairs on --surface (CVD ΔE ≥ 9.4).
+     The same colour means the same circuit everywhere; status colours never appear in these marks. */
+  --c1: #3987e5;
+  --c2: #c98500; /* yellow, not orange: orange sits too close to the alert red (ΔE 6.8) */
+  --c3: #199e70;
+  --c0: #6f6e69; /* "Nerozlišeno": energy no reading could attribute */
   color-scheme: dark;
 }
 
@@ -117,18 +123,12 @@ p {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 1.45fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 1.3vw;
   transition: opacity 0.6s ease;
 }
 
-.side {
-  display: flex;
-  flex-direction: column;
-  gap: 0.9vw;
-}
-
-.side .tile {
+.tile {
   flex: 1;
 }
 
@@ -172,25 +172,26 @@ p {
 
 /* The one hero figure: proportional digits read tighter at display sizes. */
 .hero {
-  font-size: 10vw;
+  font-size: 5vw;
+  white-space: nowrap;
   font-weight: 700;
   line-height: 1;
   letter-spacing: -0.02em;
 }
 
-.period-value {
-  font-size: 3.2vw;
-  font-weight: 700;
-  line-height: 1.05;
-  letter-spacing: -0.01em;
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0 0.4vw;
+/* Headline figure on the left, its context (kW, meter, limit) beside it. */
+.figure {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 1.6vw;
 }
 
-.period-value .unit {
-  font-size: 0.45em;
+.figure-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45vw;
+  min-width: 0;
 }
 
 .sub {
@@ -210,20 +211,6 @@ p {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.3vw 1.2vw;
-}
-
-.live-body {
-  display: grid;
-  grid-template-columns: 1.35fr 1fr;
-  gap: 2vw;
-  align-items: center;
-  flex: 1;
-}
-
-.live-main {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6vw;
 }
 
 /* Meter: the track is a lighter step of the fill's own hue. */
@@ -315,87 +302,208 @@ p {
   color: var(--ink-2);
 }
 
-/* Per-circuit cost: a meter list on the hourly limit's scale. The costliest circuit is the one
-   accent bar; the rest are de-emphasized grey, so "what to switch off" reads at a glance. */
-.phases {
+/* ---------- per-circuit split (both tiles) ---------- */
+
+.split {
   display: flex;
   flex-direction: column;
-  gap: 0.9vw;
-  padding-top: 0.4vw;
+  gap: 0.55vw;
+  margin-top: 0.6vw;
 }
 
-.phases-head {
+.split-head,
+.hours-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 1vw;
 }
 
-.phases h3 {
-  font-size: 1.3vw;
-  font-weight: 500;
-  color: var(--ink-2);
+.split h3,
+.hours h3 {
+  font-size: 1.35vw;
+  font-weight: 600;
+  color: var(--ink);
 }
 
-.phases-unit {
+.split-unit {
   font-size: 1.05vw;
   color: var(--muted);
+  text-align: right;
 }
 
-.phase {
+.split-row {
   display: grid;
-  grid-template-columns: minmax(4vw, auto) 1fr auto;
+  grid-template-columns: 1.1vw minmax(7vw, auto) 1fr 8.5vw;
   align-items: center;
   gap: 0.9vw;
-  font-size: 1.35vw;
+  font-size: 1.5vw;
 }
 
-.phase-name {
+.swatch {
+  width: 1.1vw;
+  height: 1.1vw;
+  border-radius: 3px;
+}
+
+.split-name {
   color: var(--ink-2);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.phase-track {
-  height: 1vw;
-  border-radius: 999px;
+.split-row.is-top .split-name {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.split-track {
+  height: 1.1vw;
+  border-radius: 4px;
   background: var(--grid);
   overflow: hidden;
 }
 
-.phase-fill {
+.split-fill {
   display: block;
   height: 100%;
-  border-radius: 999px;
-  background: var(--bar);
+  border-radius: 4px;
   transition: width 1s ease;
 }
 
-.phase.is-top .phase-name {
-  color: var(--ink);
-  font-weight: 600;
-}
-
-.phase.is-top .phase-fill {
-  background: var(--accent);
-}
-
-.phase-value {
-  font-size: 2.2vw;
+.split-value {
+  font-size: 2.1vw;
   font-weight: 700;
   line-height: 1;
   text-align: right;
-  min-width: 5.5vw;
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.25vw;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.5vw;
 }
 
-.phase-kw {
+.split-detail {
   font-size: 1vw;
   font-weight: 400;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 3.6vw;
+}
+
+.c1 {
+  background: var(--c1);
+}
+.c2 {
+  background: var(--c2);
+}
+.c3 {
+  background: var(--c3);
+}
+.c0 {
+  background: var(--c0);
+}
+.c-total {
+  background: var(--bar);
+}
+
+/* "Co teď běží" is the screen's main read: bigger rows, using the tile's spare height. */
+.split-big {
+  flex: 1;
+  justify-content: center;
+  gap: 1vw;
+}
+
+.split-big .split-row {
+  grid-template-columns: 1.4vw minmax(8vw, auto) 1fr 10vw;
+  font-size: 2vw;
+}
+
+.split-big .swatch {
+  width: 1.4vw;
+  height: 1.4vw;
+}
+
+.split-big .split-track {
+  height: 1.5vw;
+}
+
+.split-big .split-value {
+  font-size: 3vw;
+}
+
+.split-big .split-detail {
+  font-size: 1.15vw;
+  min-width: 4.4vw;
+}
+
+/* "Poslední hodina": the hourly limit check, compact under the live split. */
+.hourline {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4vw 0.8vw;
+  font-size: 1.2vw;
+  color: var(--ink-2);
+  padding-top: 0.6vw;
+  border-top: 1px solid var(--grid);
+}
+
+.hourline strong {
+  color: var(--ink);
+}
+
+.hourline .pill {
+  font-size: 1vw;
+  padding: 0.15vw 0.7vw;
+}
+
+/* ---------- 24 h by hour, stacked by circuit ---------- */
+
+.hours {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4vw;
+}
+
+.hours-plot {
+  position: relative;
+  height: 6vw;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.25vw;
+  border-bottom: 1px solid var(--axis);
+}
+
+.hour {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px; /* surface gap between stacked circuits */
+}
+
+.seg {
+  border-radius: 2px;
+  min-height: 0;
+}
+
+.limit-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 2px dashed var(--ink-2);
+  pointer-events: none;
+}
+
+.dash {
+  display: inline-block;
+  width: 1.6vw;
+  vertical-align: middle;
+  border-top: 2px dashed var(--ink-2);
 }
 
 /* ---------- banner ---------- */
@@ -512,31 +620,6 @@ p {
   font-weight: 700;
 }
 
-/* ---------- 24 h trend inside the day tile ---------- */
-
-.trend {
-  margin-top: auto;
-  padding-top: 0.2vw;
-}
-
-.trend svg {
-  display: block;
-  width: 100%;
-  height: 2.2vw;
-}
-
-.trend .tr-bar {
-  fill: var(--bar);
-}
-
-.trend .tr-now {
-  fill: var(--accent);
-}
-
-.trend .tr-alert {
-  fill: var(--critical);
-}
-
 .trend-axis {
   display: flex;
   justify-content: space-between;
@@ -544,10 +627,6 @@ p {
   font-size: 1vw;
   color: var(--muted);
   margin-top: 0.2vw;
-}
-
-.trend-note {
-  color: var(--ink-2);
 }
 
 /* ---------- footer ---------- */

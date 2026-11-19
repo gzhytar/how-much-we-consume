@@ -372,6 +372,51 @@ describe("live rate and chart levels", () => {
     expect(live.phases![1].w / 1000).toBeLessThan(2);
   });
 
+  it("splits the last 24 h per circuit, adding up even when older readings lack counters", () => {
+    // 1 kW per phase all day; per-phase counters only for the last 2 hours (stored since a deploy),
+    // live power before that, and the first 2 hours with no phase data at all.
+    const samples: Sample[] = [];
+    let e = [0, 0, 0];
+    const w = [500, 300, 200];
+    for (let t = now - DAY - HOUR; t <= now; t += 5 * MINUTE) {
+      const s: Sample = { ts: t, wh: e[0] + e[1] + e[2], w: 1000 };
+      if (t > now - DAY + HOUR) s.phases = w;
+      if (t >= now - 2 * HOUR) s.phaseWh = e;
+      samples.push(s);
+      e = e.map((x, i) => x + (w[i] * 5 * MINUTE) / HOUR);
+    }
+    const s = buildSummary({ samples, schedule: parseFallback(""), scheduleSource: "t", prices, limits: { hourCzk: 20, dayCzk: 1000 }, now, phaseNames: ["Kuchyň", "Obývák", "Děti"] });
+    expect(s.daySplit).toBe("mixed");
+    expect(s.parts).toEqual(["Kuchyň", "Obývák", "Děti", "Nerozlišeno"]);
+    const parts = s.dayParts!;
+    expect(parts.map((p) => p.name)).toEqual(["Kuchyň", "Obývák", "Děti", "Nerozlišeno"]);
+    expect(parts.reduce((a, p) => a + p.czk, 0)).toBeCloseTo(s.day.czk, 6);
+    expect(parts.reduce((a, p) => a + p.czkShown, 0)).toBe(Math.ceil(s.day.czk - 1e-9));
+    // Attributed hours keep the 5:3:2 split; the hour with no phase data goes to "Nerozlišeno".
+    expect(parts[0].czk / parts[1].czk).toBeCloseTo(5 / 3, 6);
+    expect(parts[3].czk).toBeGreaterThan(0);
+    // Each hourly column adds up to the hour's total.
+    for (const b of s.bars) expect(b.parts!.reduce((a, x) => a + x, 0)).toBeCloseTo(b.czk, 6);
+    expect(s.live?.phaseSplit).toBe("energy");
+  });
+
+  it("rounds among the shown parts only, when a sliver of energy is unattributed", () => {
+    // 3 readings in 24 h lack phase data: a sliver goes to "Nerozlišeno" and is hidden (≤ 0,5 %),
+    // yet the shown rows must still sum to the shown day total.
+    const samples: Sample[] = [];
+    let e = [0, 0, 0];
+    const w = [1817, 1709, 2470];
+    for (let t = now - DAY - HOUR; t <= now; t += MINUTE) {
+      const gap = t > now - 10 * HOUR && t <= now - 10 * HOUR + 2 * MINUTE;
+      samples.push({ ts: t, wh: e[0] + e[1] + e[2], w: 0, ...(gap ? {} : { phases: w, phaseWh: e }) });
+      e = e.map((x, i) => x + (w[i] * MINUTE) / HOUR);
+    }
+    const s = buildSummary({ samples, schedule: parseFallback(""), scheduleSource: "t", prices, limits: { hourCzk: 20, dayCzk: 1000 }, now });
+    const parts = s.dayParts!;
+    expect(parts).toHaveLength(3);
+    expect(parts.reduce((a, p) => a + p.czkShown, 0)).toBe(Math.ceil(s.day.czk - 1e-9));
+  });
+
   it("apportions whole numbers that sum to the total", async () => {
     const { apportion } = await import("@/lib/summary");
     expect(apportion([1.1, 2.2, 0.1], 13)).toEqual([4, 9, 0]);

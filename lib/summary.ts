@@ -1,4 +1,4 @@
-import { buildLedger, sumRange, type Sample } from "./energy";
+import { buildLedger, sumRange, type Ledger, type Sample } from "./energy";
 import { nextChange, tariffAt, tariffStretches, type Prices, type Tariff, type TariffStretch, type WeeklySchedule } from "./tariff";
 import {
   baselineFor,
@@ -48,13 +48,28 @@ export interface Bar {
   partial: boolean;
   /** alert = over the hourly limit, warn = well above usual for that hour. */
   level: Level;
+  /** Cost of the hour per part, in Summary.parts order (circuits, then "Nerozlišeno"); null without phase data. */
+  parts: number[] | null;
 }
+
+/** One circuit's (phase's) share of the last 24 hours. */
+export interface DayPart {
+  name: string;
+  czk: number;
+  kwh: number;
+  /** Whole crowns for display, rounded so the parts sum to the day's shown (rounded-up) total. */
+  czkShown: number;
+  /** Share of the day's cost, 0…1. */
+  share: number;
+}
+
+/** Where a split comes from: per-phase energy counters (exact), live power per phase (estimate), or both. */
+export type SplitSource = "energy" | "power" | "mixed";
 
 
 /**
- * One phase's part of "Právě teď", over the same window as the headline, so the parts add up to it.
- * Split by each phase's energy counter when every reading in the window has one; otherwise
- * (readings stored before per-phase counters, or a meter without them) by the latest live power.
+ * One circuit's part of "Právě teď", over the same window as the headline, so the parts add up to it.
+ * See `attribute` for how the energy between two readings is split between circuits.
  */
 export interface PhasePower {
   name: string;
@@ -79,10 +94,9 @@ export interface LiveSummary {
   usualLevel: Level | null;
   vsUsualPct: number | null;
   level: Level;
-  /** Live (not averaged) power per phase from the latest reading. */
+  /** Per circuit, plus "Nerozlišeno" when some energy can't be attributed; null without phase data. */
   phases: PhasePower[] | null;
-  /** Where the phase split comes from: per-phase energy counters (exact) or the latest live power. */
-  phaseSplit: "energy" | "power" | null;
+  phaseSplit: SplitSource | null;
 }
 
 export interface Summary {
@@ -102,6 +116,14 @@ export interface Summary {
   hour: PeriodSummary;
   day: PeriodSummary;
   bars: Bar[];
+  /**
+   * Names of the parts the cost is split into, in a fixed order: L1–L3 (or PHASE_NAMES), then
+   * "Nerozlišeno" for energy no reading could attribute. Null when no reading has phase data.
+   */
+  parts: string[] | null;
+  /** The last 24 hours per part (same order as `parts`); null without phase data. */
+  dayParts: DayPart[] | null;
+  daySplit: SplitSource | null;
   /**
    * VT/NT stretches from now to TIMELINE_HOURS ahead; a short headline stating when power is cheap
    * (the timeline's title); and one sentence on when to run big appliances (shown in the banner when
@@ -158,8 +180,12 @@ export function buildSummary(input: SummaryInput): Summary {
     return ntMinutes / 60;
   };
 
-  const bars: Bar[] = [];
   const currentHour = floorHour(now);
+  const names = input.phaseNames ?? [];
+  const partNames = [0, 1, 2].map((i) => names[i] || `L${i + 1}`).concat(UNATTRIBUTED);
+  const attr = attribute(sorted, Math.min(end - DAY, currentHour - 23 * HOUR), schedule, prices);
+
+  const bars: Bar[] = [];
   for (let i = 23; i >= 0; i--) {
     const start = currentHour - i * HOUR;
     const r = sumRange(ledger, start, start + HOUR);
@@ -176,6 +202,7 @@ export function buildSummary(input: SummaryInput): Summary {
       usualCzk: usual ? usual.median : null,
       partial: i === 0,
       level: overLimit ? "alert" : overUsual && i > 0 ? "warn" : "ok",
+      parts: attr ? attr.ledgers.map((l) => sumRange(l, start, start + HOUR).czk) : null,
     });
   }
   const current = tariffAt(schedule, now);
@@ -189,13 +216,11 @@ export function buildSummary(input: SummaryInput): Summary {
   if (latest && !stale) {
     const liveWindow = pollMinutes * MINUTE;
     const r = sumRange(ledger, end - liveWindow, end);
-    const split = phaseSplit(sorted, end - liveWindow, end, schedule, prices);
     const perHour = HOUR / liveWindow;
     const czkPerHour = r.czk * perHour;
     const limitLevel = levelFromLimit(czkPerHour, limits.hourCzk);
     const usualCzkPerHour = hour.usual ? hour.usual.median : null;
     const usualLevel = usualCzkPerHour !== null ? levelFromBaseline(czkPerHour, usualCzkPerHour, 3) : null;
-    const names = input.phaseNames ?? [];
     live = {
       windowMinutes: pollMinutes,
       kw: r.kwh * perHour,
@@ -206,7 +231,7 @@ export function buildSummary(input: SummaryInput): Summary {
       usualLevel,
       vsUsualPct: usualCzkPerHour && usualCzkPerHour > 0 ? (czkPerHour / usualCzkPerHour - 1) * 100 : null,
       level: worst(limitLevel, usualLevel),
-      ...splitLive(split, r.kwh * perHour, czkPerHour, names),
+      ...splitLive(attr, end - liveWindow, end, perHour, r.kwh * perHour, czkPerHour, partNames),
     };
   }
 
@@ -249,6 +274,7 @@ export function buildSummary(input: SummaryInput): Summary {
     hour,
     day,
     bars,
+    ...splitDay(attr, end - DAY, end, day.czk, partNames),
     timeline: { stretches, ...timelineText(current, change, now) },
     historyDays,
     level: worst(live?.level, hour.level, day.level),
@@ -286,57 +312,118 @@ function period(
   };
 }
 
+export const UNATTRIBUTED = "Nerozlišeno";
+
+interface Attribution {
+  /** Per-minute energy and cost per part: L1, L2, L3, unattributed. */
+  ledgers: Ledger[];
+  /** How each interval between two readings was split. */
+  intervals: { from: number; to: number; source: "energy" | "power" | "none" }[];
+}
+
 /**
- * Each phase's share of the window [from, to). From the per-phase energy counters when every reading
- * that the window's energy comes from has them (cost-weighted, so a VT/NT change inside the window is
- * exact); otherwise from the latest reading's live power per phase. Null when there's neither.
+ * Splits the energy between consecutive readings (the exact total-counter delta) between circuits:
+ * by the per-phase counter deltas when both readings have them, else by the two readings' average
+ * live power per phase (an estimate), else to "Nerozlišeno". The parts always sum to the total, so
+ * every split adds up to the matching headline. Starts at the last reading at or before `from`.
+ * Null when no reading has any phase data.
  */
-function phaseSplit(
-  sorted: Sample[],
-  from: number,
-  to: number,
-  schedule: WeeklySchedule,
-  prices: Prices,
-): { shares: number[]; source: "energy" | "power" } | null {
-  // The window's energy comes from the last reading at or before its start and every reading after.
+function attribute(sorted: Sample[], from: number, schedule: WeeklySchedule, prices: Prices): Attribution | null {
   const start = floorMinute(from);
   let i0 = 0;
   for (let i = 0; i < sorted.length; i++) if (sorted[i].ts <= start) i0 = i;
-  const span = sorted.slice(i0).filter((s) => s.ts <= to);
-  if (span.length >= 2 && span.every((s) => s.phaseWh?.length === 3)) {
-    const czk = [0, 1, 2].map((p) => {
-      const perPhase = span.map((s) => ({ ts: s.ts, wh: s.phaseWh![p], w: 0 }));
-      return sumRange(buildLedger(perPhase, schedule, prices), from, to).czk;
-    });
-    const total = czk.reduce((a, b) => a + b, 0);
-    if (total > 0) return { shares: czk.map((c) => c / total), source: "energy" };
+  const span = sorted.slice(i0);
+  if (span.length < 2 || !span.some((s) => s.phaseWh?.length === 3 || s.phases?.length === 3)) return null;
+
+  const cum = [0, 0, 0, 0];
+  const series: Sample[][] = cum.map(() => [{ ts: span[0].ts, wh: 0, w: 0 }]);
+  const intervals: Attribution["intervals"] = [];
+  for (let i = 1; i < span.length; i++) {
+    const a = span[i - 1];
+    const b = span[i];
+    const dWh = Math.max(0, b.wh - a.wh);
+    let shares: number[] | null = null;
+    let source: "energy" | "power" | "none" = "none";
+    if (a.phaseWh?.length === 3 && b.phaseWh?.length === 3) {
+      const d = [0, 1, 2].map((p) => Math.max(0, b.phaseWh![p] - a.phaseWh![p]));
+      shares = normalize(d);
+      if (shares) source = "energy";
+    }
+    if (!shares && a.phases?.length === 3 && b.phases?.length === 3) {
+      shares = normalize([0, 1, 2].map((p) => (Math.max(0, a.phases![p]) + Math.max(0, b.phases![p])) / 2));
+      if (shares) source = "power";
+    }
+    const all = shares ? [...shares, 0] : [0, 0, 0, 1];
+    for (let k = 0; k < 4; k++) {
+      cum[k] += dWh * all[k];
+      series[k].push({ ts: b.ts, wh: cum[k], w: 0 });
+    }
+    intervals.push({ from: a.ts, to: b.ts, source });
   }
-  const live = sorted[sorted.length - 1]?.phases;
-  if (live?.length === 3) {
-    const w = live.map((x) => Math.max(0, x));
-    const total = w.reduce((a, b) => a + b, 0);
-    return { shares: w.map((x) => (total > 0 ? x / total : 0)), source: "power" };
-  }
-  return null;
+  return { ledgers: series.map((x) => buildLedger(x, schedule, prices)), intervals };
 }
 
+function normalize(v: number[]): number[] | null {
+  const sum = v.reduce((a, b) => a + b, 0);
+  return sum > 0 ? v.map((x) => x / sum) : null;
+}
+
+/** Which source(s) the intervals overlapping [from, to) were split with. */
+function sourceIn(attr: Attribution, from: number, to: number): SplitSource | null {
+  const used = new Set(attr.intervals.filter((x) => x.to > from && x.from < to).map((x) => x.source));
+  if (used.size === 1 && used.has("energy")) return "energy";
+  if (used.size === 1 && used.has("power")) return "power";
+  return used.size ? "mixed" : null;
+}
+
+/** Keeps the circuits always, "Nerozlišeno" only when it's more than a rounding error. */
+const keepPart = (i: number, value: number, total: number) => i < 3 || (total > 0 && value / total > 0.005);
+
 function splitLive(
-  split: { shares: number[]; source: "energy" | "power" } | null,
+  attr: Attribution | null,
+  from: number,
+  to: number,
+  perHour: number,
   kw: number,
   czkPerHour: number,
   names: string[],
-): { phases: PhasePower[] | null; phaseSplit: "energy" | "power" | null } {
-  if (!split) return { phases: null, phaseSplit: null };
-  const czkShown = apportion(split.shares, ceilCzk(czkPerHour));
-  const tenths = apportion(split.shares, Math.round(kw * 10));
+): { phases: PhasePower[] | null; phaseSplit: SplitSource | null } {
+  if (!attr) return { phases: null, phaseSplit: null };
+  // Pick the parts first, then round among them only, so the shown rows sum to the headline.
+  const r = attr.ledgers.map((l) => sumRange(l, from, to)).filter((x, i) => keepPart(i, x.czk * perHour, czkPerHour));
+  const czkShown = apportion(r.map((x) => x.czk), ceilCzk(czkPerHour));
+  const tenths = apportion(r.map((x) => x.kwh), Math.round(kw * 10));
   return {
-    phaseSplit: split.source,
-    phases: split.shares.map((share, i) => ({
-      name: names[i] || `L${i + 1}`,
-      w: share * kw * 1000,
-      czkPerHour: share * czkPerHour,
+    phaseSplit: sourceIn(attr, from, to),
+    phases: r.map((x, i) => ({
+      name: names[i],
+      w: x.kwh * perHour * 1000,
+      czkPerHour: x.czk * perHour,
       czkShown: czkShown[i],
       kwShown: tenths[i] / 10,
+    })),
+  };
+}
+
+function splitDay(
+  attr: Attribution | null,
+  from: number,
+  to: number,
+  totalCzk: number,
+  names: string[],
+): { parts: string[] | null; dayParts: DayPart[] | null; daySplit: SplitSource | null } {
+  if (!attr) return { parts: null, dayParts: null, daySplit: null };
+  const r = attr.ledgers.map((l) => sumRange(l, from, to)).filter((x, i) => keepPart(i, x.czk, totalCzk));
+  const shown = apportion(r.map((x) => x.czk), ceilCzk(totalCzk));
+  return {
+    parts: names,
+    daySplit: sourceIn(attr, from, to),
+    dayParts: r.map((x, i) => ({
+      name: names[i],
+      czk: x.czk,
+      kwh: x.kwh,
+      czkShown: shown[i],
+      share: totalCzk > 0 ? x.czk / totalCzk : 0,
     })),
   };
 }
